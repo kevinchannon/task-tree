@@ -13,6 +13,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 from rich.tree import Tree
 
+from tasktree import __version__
 from tasktree.executor import Executor
 from tasktree.graph import build_dependency_tree
 from tasktree.hasher import hash_task
@@ -233,6 +234,10 @@ def main():
 
     if args[0] in ["--help", "-h"]:
         app()
+        return
+
+    if args[0] in ["--version", "-v"]:
+        console.print(f"task-tree version {__version__}")
         return
 
     if args[0] in ["--clean-state", "--reset"]:

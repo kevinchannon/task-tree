@@ -1,13 +1,31 @@
 # Task Tree (tt)
 
-[![Tests](https://github.com/kevinchannon/tasktree/actions/workflows/test.yml/badge.svg)](https://github.com/YOUR_USERNAME/tasktree/actions/workflows/test.yml)
+[![Tests](https://github.com/kevinchannon/tasktree/actions/workflows/test.yml/badge.svg)](https://github.com/kevinchannon/tasktree/actions/workflows/test.yml)
 
 A task automation tool that combines simple command execution with intelligent dependency tracking and incremental execution.
 
 ## Installation
 
+### From PyPI (Recommended)
+
 ```bash
 pipx install tasktree
+```
+
+### From Source
+
+For the latest unreleased version from GitHub:
+
+```bash
+pipx install git+https://github.com/kevinchannon/tasktree.git
+```
+
+Or to install from a local clone:
+
+```bash
+git clone https://github.com/kevinchannon/tasktree.git
+cd tasktree
+pipx install .
 ```
 
 ## Quick Start
@@ -258,3 +276,98 @@ Built with Python 3.11+ using:
 - **pathlib** for file operations and glob expansion
 
 State file uses JSON format for simplicity and standard library compatibility.
+
+## Development
+
+### Setup Development Environment
+
+```bash
+# Clone repository
+git clone https://github.com/kevinchannon/tasktree.git
+cd tasktree
+
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies
+uv sync
+
+# Install in editable mode
+pipx install -e .
+```
+
+### Running Tests
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/unit/test_executor.py
+```
+
+### Using Task Tree for Development
+
+The repository includes a `tasktree.yaml` with development tasks:
+
+```bash
+tt test          # Run tests
+tt build         # Build wheel package
+tt install-dev   # Install package in development mode
+tt clean         # Remove build artifacts
+```
+
+## Releasing
+
+New releases are created by pushing version tags to GitHub. The release workflow automatically:
+- Builds wheel and source distributions
+- Creates a GitHub Release with artifacts
+- Publishes to PyPI via trusted publishing
+
+### Release Process
+
+1. Ensure main branch is ready:
+```bash
+git checkout main
+git pull
+```
+
+2. Create and push a version tag:
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+3. GitHub Actions will automatically:
+   - Extract version from tag (e.g., `v1.0.0` → `1.0.0`)
+   - Update `pyproject.toml` with the version
+   - Build wheel and sdist
+   - Create GitHub Release
+   - Publish to PyPI
+
+4. Verify the release:
+   - GitHub: https://github.com/kevinchannon/tasktree/releases
+   - PyPI: https://pypi.org/project/tasktree/
+   - Test: `pipx install --force tasktree`
+
+### Version Numbering
+
+Follow semantic versioning:
+- `v1.0.0` - Major release (breaking changes)
+- `v1.1.0` - Minor release (new features, backward compatible)
+- `v1.1.1` - Patch release (bug fixes)
+
+### PyPI Trusted Publishing Setup
+
+Before the first release, configure trusted publishing on PyPI:
+
+1. Go to https://pypi.org/manage/account/publishing/
+2. Add a new publisher:
+   - **PyPI Project Name**: `tasktree`
+   - **Owner**: `kevinchannon`
+   - **Repository name**: `tasktree`
+   - **Workflow name**: `release.yml`
+   - **Environment name**: (leave blank)
