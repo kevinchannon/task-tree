@@ -1,8 +1,16 @@
 [project]
 name = "tasktree"
 version = "0.1.0"
-description = "Add your description here"
+description = "A task automation tool that combines simple command execution with intelligent dependency tracking and incremental execution."
 requires-python = ">=3.12"
 dependencies = [
     "pytest>=9.0.2",
+    "PyYAML>=6.0",
+    "typer>=0.9.0",
+    "rich>=13.0.0",
+    "colorama>=0.4.6",
+    "pygments>=2.15.0",
 ]
+
+[project.scripts]
+tt = "tasktree.cli:main"
