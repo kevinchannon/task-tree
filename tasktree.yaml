@@ -1,18 +1,48 @@
-hello:
-  desc: Print a greeting
-  cmd: echo "Hello from Task Tree!"
-
-world:
-  desc: Print world message
-  deps: [hello]
-  cmd: echo "World!"
+dev-setup:
+  desc: Install development dependencies
+  outputs: [.venv/bin/pytest]
+  cmd: |
+    uv pip install -e ".[dev]"
+    uv pip install build
 
 test:
-  desc: Run the tests
+  desc: Run the test suite
+  deps: [dev-setup]
+  inputs: [src/**/*.py, tests/**/*.py]
   cmd: python3 -m pytest tests/ -v
 
 build:
-  desc: Build the package
+  desc: Build distribution packages (wheel and sdist)
   deps: [test]
-  outputs: [dist/]
-  cmd: echo "Building package..."
+  inputs: [src/**/*.py, pyproject.toml, README.md]
+  outputs: [dist/*.whl, dist/*.tar.gz]
+  cmd: python3 -m build
+
+install-dev:
+  desc: Install package in editable mode for development
+  deps: [dev-setup]
+  cmd: uv pip install -e .
+
+clean:
+  desc: Remove build artifacts and cache files
+  cmd: |
+    rm -rf dist/ build/ *.egg-info
+    rm -rf .pytest_cache
+    find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+    rm -f .tasktree-state
+
+clean-all:
+  desc: Remove all generated files including virtual environment
+  deps: [clean]
+  cmd: rm -rf .venv
+
+reinstall:
+  desc: Clean, build, and install the package
+  deps: [clean, build]
+  cmd: |
+    pipx reinstall dist/*.whl || echo "Install with: pipx install dist/*.whl"
+
+check:
+  desc: Run all checks (tests and build)
+  deps: [test, build]
+  cmd: echo "✓ All checks passed!"
