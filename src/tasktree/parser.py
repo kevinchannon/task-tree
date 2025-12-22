@@ -9,6 +9,11 @@ from typing import Any
 import yaml
 
 
+class CircularImportError(Exception):
+    """Raised when a circular import is detected."""
+    pass
+
+
 @dataclass
 class Task:
     """Represents a task definition."""
@@ -90,71 +95,71 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
 
 
 def parse_recipe(recipe_path: Path) -> Recipe:
-    """Parse a recipe file and handle imports.
+    """Parse a recipe file and handle imports recursively.
 
     Args:
         recipe_path: Path to the main recipe file
 
     Returns:
-        Recipe object with all tasks
+        Recipe object with all tasks (including recursively imported tasks)
 
     Raises:
         FileNotFoundError: If recipe file doesn't exist
+        CircularImportError: If circular imports are detected
         yaml.YAMLError: If YAML is invalid
         ValueError: If recipe structure is invalid
     """
     if not recipe_path.exists():
         raise FileNotFoundError(f"Recipe file not found: {recipe_path}")
 
-    with open(recipe_path, "r") as f:
-        data = yaml.safe_load(f)
-
-    if data is None:
-        data = {}
-
     project_root = recipe_path.parent
-    tasks: dict[str, Task] = {}
 
-    # Process imports first
-    imports = data.get("import", [])
-    if imports:
-        for import_spec in imports:
-            import_file = import_spec["file"]
-            namespace = import_spec["as"]
-
-            import_path = project_root / import_file
-            if not import_path.exists():
-                raise FileNotFoundError(f"Import file not found: {import_path}")
-
-            # Parse imported file
-            imported_tasks = _parse_file(import_path, namespace, project_root)
-            tasks.update(imported_tasks)
-
-    # Process local tasks
-    local_tasks = _parse_file(recipe_path, None, project_root)
-    tasks.update(local_tasks)
+    # Parse main file - it will recursively handle all imports
+    tasks = _parse_file(recipe_path, namespace=None, project_root=project_root)
 
     return Recipe(tasks=tasks, project_root=project_root)
 
 
 def _parse_file(
-    file_path: Path, namespace: str | None, project_root: Path
+    file_path: Path,
+    namespace: str | None,
+    project_root: Path,
+    import_stack: list[Path] | None = None,
 ) -> dict[str, Task]:
-    """Parse a single YAML file and return tasks.
+    """Parse a single YAML file and return tasks, recursively processing imports.
 
     Args:
         file_path: Path to YAML file
         namespace: Optional namespace prefix for tasks
         project_root: Root directory of the project
+        import_stack: Stack of files being imported (for circular detection)
 
     Returns:
         Dictionary of task name to Task objects
+
+    Raises:
+        CircularImportError: If a circular import is detected
+        FileNotFoundError: If an imported file doesn't exist
+        ValueError: If task structure is invalid
     """
+    # Initialize import stack if not provided
+    if import_stack is None:
+        import_stack = []
+
+    # Detect circular imports
+    if file_path in import_stack:
+        chain = " → ".join(str(f.name) for f in import_stack + [file_path])
+        raise CircularImportError(f"Circular import detected: {chain}")
+
+    # Add current file to stack
+    import_stack.append(file_path)
+
+    # Load YAML
     with open(file_path, "r") as f:
         data = yaml.safe_load(f)
 
     if data is None:
-        return {}
+        data = {}
 
     tasks: dict[str, Task] = {}
     file_dir = file_path.parent
@@ -162,6 +167,38 @@ def _parse_file(
     # Default working directory is the file's directory
     default_working_dir = str(file_dir.relative_to(project_root)) if file_dir != project_root else "."
 
+    # Track local import namespaces for dependency rewriting
+    local_import_namespaces: set[str] = set()
+
+    # Process nested imports FIRST
+    imports = data.get("import", [])
+    if imports:
+        for import_spec in imports:
+            child_file = import_spec["file"]
+            child_namespace = import_spec["as"]
+
+            # Track this namespace as a local import
+            local_import_namespaces.add(child_namespace)
+
+            # Build full namespace chain
+            full_namespace = f"{namespace}.{child_namespace}" if namespace else child_namespace
+
+            # Resolve import path relative to current file's directory
+            child_path = file_path.parent / child_file
+            if not child_path.exists():
+                raise FileNotFoundError(f"Import file not found: {child_path}")
+
+            # Recursively process with namespace chain and import stack
+            nested_tasks = _parse_file(
+                child_path,
+                full_namespace,
+                project_root,
+                import_stack.copy(),  # Pass copy to avoid shared mutation
+            )
+
+            tasks.update(nested_tasks)
+
+    # Process local tasks
     for task_name, task_data in data.items():
         # Skip import declarations
         if task_name == "import":
@@ -184,11 +221,25 @@ def _parse_file(
         if isinstance(deps, str):
             deps = [deps]
         if namespace:
-            # Rewrite internal dependencies to use namespace
-            deps = [
-                f"{namespace}.{dep}" if not "." in dep else dep
-                for dep in deps
-            ]
+            # Rewrite dependencies: only prefix if it's a local reference
+            # A dependency is local if:
+            # 1. It has no dots (simple name like "init")
+            # 2. It starts with a local import namespace (like "base.setup" when "base" is imported)
+            rewritten_deps = []
+            for dep in deps:
+                if "." not in dep:
+                    # Simple name - always prefix
+                    rewritten_deps.append(f"{namespace}.{dep}")
+                else:
+                    # Check if it starts with a local import namespace
+                    dep_root = dep.split(".", 1)[0]
+                    if dep_root in local_import_namespaces:
+                        # Local import reference - prefix it
+                        rewritten_deps.append(f"{namespace}.{dep}")
+                    else:
+                        # External reference - keep as-is
+                        rewritten_deps.append(dep)
+            deps = rewritten_deps
 
         task = Task(
             name=full_name,
@@ -203,6 +254,9 @@ def _parse_file(
         )
 
         tasks[full_name] = task
+
+    # Remove current file from stack
+    import_stack.pop()
 
     return tasks
 

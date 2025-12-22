@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from tasktree.parser import Task, parse_arg_spec, parse_recipe
+from tasktree.parser import CircularImportError, Task, parse_arg_spec, parse_recipe
 
 
 class TestParseArgSpec(unittest.TestCase):
@@ -164,13 +164,8 @@ all:
             all_task = recipe.tasks["all"]
             self.assertEqual(all_task.deps, ["build.compile", "test.unit", "test.integration"])
 
-    @unittest.expectedFailure
     def test_nested_imports(self):
-        """Test that imported files can also have imports (nested imports).
-
-        NOTE: This feature is not currently implemented. Tasks from nested imports
-        are not included in the final recipe.
-        """
+        """Test that imported files can also have imports (nested imports)."""
         with TemporaryDirectory() as tmpdir:
             # Create deepest level import
             (Path(tmpdir) / "base.yaml").write_text("""
@@ -209,13 +204,8 @@ build:
             build_task = recipe.tasks["build"]
             self.assertEqual(build_task.deps, ["common.prepare", "common.base.setup"])
 
-    @unittest.expectedFailure
     def test_deep_nested_imports(self):
-        """Test deeply nested imports (A -> B -> C -> D).
-
-        NOTE: This feature is not currently implemented. Nested imports beyond
-        one level are not supported.
-        """
+        """Test deeply nested imports (A -> B -> C -> D)."""
         with TemporaryDirectory() as tmpdir:
             # Level 4 (deepest)
             (Path(tmpdir) / "level4.yaml").write_text("""
@@ -263,13 +253,8 @@ task1:
             self.assertIn("l2.task2", recipe.tasks)
             self.assertIn("task1", recipe.tasks)
 
-    @unittest.expectedFailure
     def test_diamond_import_topology(self):
-        """Test diamond import pattern: A imports B and C, both import D.
-
-        NOTE: This feature is not currently implemented. Nested imports are not
-        supported, so the base.setup task is not available through the import chain.
-        """
+        """Test diamond import pattern: A imports B and C, both import D."""
         with TemporaryDirectory() as tmpdir:
             # Base file (D)
             (Path(tmpdir) / "base.yaml").write_text("""
@@ -474,6 +459,183 @@ task:
 
             recipe = parse_recipe(recipe_path)
             self.assertIn("task", recipe.tasks)
+
+    def test_circular_import_self_reference(self):
+        """Test that a file importing itself raises CircularImportError."""
+        with TemporaryDirectory() as tmpdir:
+            # Create a file that imports itself
+            (Path(tmpdir) / "self.yaml").write_text("""
+import:
+  - file: self.yaml
+    as: myself
+
+task:
+  cmd: echo "test"
+""")
+
+            recipe_path = Path(tmpdir) / "self.yaml"
+            with self.assertRaises(CircularImportError) as cm:
+                parse_recipe(recipe_path)
+
+            # Check error message shows the circular chain
+            self.assertIn("Circular import detected", str(cm.exception))
+            self.assertIn("self.yaml", str(cm.exception))
+
+    def test_circular_import_two_files(self):
+        """Test that A→B→A circular import is detected."""
+        with TemporaryDirectory() as tmpdir:
+            # A imports B
+            (Path(tmpdir) / "a.yaml").write_text("""
+import:
+  - file: b.yaml
+    as: b
+
+task-a:
+  cmd: echo "a"
+""")
+
+            # B imports A (creates cycle)
+            (Path(tmpdir) / "b.yaml").write_text("""
+import:
+  - file: a.yaml
+    as: a
+
+task-b:
+  cmd: echo "b"
+""")
+
+            recipe_path = Path(tmpdir) / "a.yaml"
+            with self.assertRaises(CircularImportError) as cm:
+                parse_recipe(recipe_path)
+
+            error_msg = str(cm.exception)
+            self.assertIn("Circular import detected", error_msg)
+            # Should show the chain: a.yaml → b.yaml → a.yaml
+            self.assertIn("a.yaml", error_msg)
+            self.assertIn("b.yaml", error_msg)
+
+    def test_circular_import_three_files(self):
+        """Test that A→B→C→A circular import is detected."""
+        with TemporaryDirectory() as tmpdir:
+            # A imports B
+            (Path(tmpdir) / "a.yaml").write_text("""
+import:
+  - file: b.yaml
+    as: b
+
+task-a:
+  cmd: echo "a"
+""")
+
+            # B imports C
+            (Path(tmpdir) / "b.yaml").write_text("""
+import:
+  - file: c.yaml
+    as: c
+
+task-b:
+  cmd: echo "b"
+""")
+
+            # C imports A (creates cycle)
+            (Path(tmpdir) / "c.yaml").write_text("""
+import:
+  - file: a.yaml
+    as: a
+
+task-c:
+  cmd: echo "c"
+""")
+
+            recipe_path = Path(tmpdir) / "a.yaml"
+            with self.assertRaises(CircularImportError) as cm:
+                parse_recipe(recipe_path)
+
+            error_msg = str(cm.exception)
+            self.assertIn("Circular import detected", error_msg)
+            # Should show all three files in the chain
+            self.assertIn("a.yaml", error_msg)
+            self.assertIn("b.yaml", error_msg)
+            self.assertIn("c.yaml", error_msg)
+
+    def test_import_path_resolution_file_relative(self):
+        """Test imports are resolved relative to importing file, not project root."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create directory structure
+            common_dir = project_root / "common"
+            shared_dir = project_root / "shared"
+            common_dir.mkdir()
+            shared_dir.mkdir()
+
+            # shared/utils.yaml
+            (shared_dir / "utils.yaml").write_text("""
+utility:
+  cmd: echo "utility task"
+""")
+
+            # common/base.yaml imports ../shared/utils.yaml (relative to common/)
+            (common_dir / "base.yaml").write_text("""
+import:
+  - file: ../shared/utils.yaml
+    as: utils
+
+base-task:
+  deps: [utils.utility]
+  cmd: echo "base"
+""")
+
+            # Main recipe imports common/base.yaml
+            recipe_path = project_root / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: common/base.yaml
+    as: common
+
+main:
+  deps: [common.base-task]
+  cmd: echo "main"
+""")
+
+            recipe = parse_recipe(recipe_path)
+
+            # Should have all tasks with proper namespacing
+            self.assertIn("common.utils.utility", recipe.tasks)
+            self.assertIn("common.base-task", recipe.tasks)
+            self.assertIn("main", recipe.tasks)
+
+            # Verify dependency chain
+            main_task = recipe.tasks["main"]
+            self.assertEqual(main_task.deps, ["common.base-task"])
+
+            base_task = recipe.tasks["common.base-task"]
+            self.assertEqual(base_task.deps, ["common.utils.utility"])
+
+    def test_nested_import_file_not_found(self):
+        """Test clear error when nested import file doesn't exist."""
+        with TemporaryDirectory() as tmpdir:
+            # common.yaml tries to import a file that doesn't exist
+            (Path(tmpdir) / "common.yaml").write_text("""
+import:
+  - file: nonexistent.yaml
+    as: missing
+
+task:
+  cmd: echo "test"
+""")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: common.yaml
+    as: common
+""")
+
+            with self.assertRaises(FileNotFoundError) as cm:
+                parse_recipe(recipe_path)
+
+            self.assertIn("Import file not found", str(cm.exception))
 
 
 class TestParseMultilineCommands(unittest.TestCase):
