@@ -168,7 +168,7 @@ def _init_recipe():
         raise typer.Exit(1)
 
     template = """# Task Tree Recipe
-# See https://github.com/yourusername/tasktree for documentation
+# See https://github.com/kevinchannon/tasktree for documentation
 
 # Example task definitions:
 
