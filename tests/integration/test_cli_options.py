@@ -1,14 +1,21 @@
 """Integration tests for CLI options vs user task names."""
 
-import subprocess
-import sys
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from typer.testing import CliRunner
+
+from tasktree.cli import app
+
 
 class TestCLIOptionsNoClash(unittest.TestCase):
     """Test that CLI options (--show, --tree, etc.) don't clash with user task names."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.runner = CliRunner()
 
     def test_user_tasks_with_builtin_names(self):
         """Test that user can create tasks named 'show', 'tree', 'init', etc.
@@ -39,42 +46,28 @@ list:
   cmd: echo "Running user's list task"
 """)
 
-            # Test 1: User tasks can be executed
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "show"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Running user's show task", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
 
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "tree"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Running user's tree task", result.stdout)
+                # Test 1: User tasks can be executed
+                result = self.runner.invoke(app, ["show"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Task 'show' completed successfully", result.stdout)
 
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "init"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Running user's init task", result.stdout)
+                result = self.runner.invoke(app, ["tree"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Task 'tree' completed successfully", result.stdout)
 
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "list"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Running user's list task", result.stdout)
+                result = self.runner.invoke(app, ["init"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Task 'init' completed successfully", result.stdout)
+
+                result = self.runner.invoke(app, ["list"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Task 'list' completed successfully", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
     def test_builtin_options_still_work(self):
         """Test that built-in options still work when user has tasks with same names."""
@@ -94,55 +87,46 @@ build:
   cmd: echo "building" > output.txt
 """)
 
-            # Test that --show (built-in option) still works
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--show", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("build:", result.stdout)
-            self.assertIn("desc: Build task", result.stdout)
-            # Should NOT execute the user's "show" task
-            self.assertNotIn("Running user's show task", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
 
-            # Test that --list (built-in option) still works
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--list"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Available Tasks", result.stdout)
-            self.assertIn("show", result.stdout)
-            self.assertIn("build", result.stdout)
+                # Test that --show (built-in option) still works
+                result = self.runner.invoke(app, ["--show", "build"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("build:", result.stdout)
+                self.assertIn("desc: Build task", result.stdout)
+                # Should NOT execute the user's "show" task
+                self.assertNotIn("Running user's show task", result.stdout)
 
-            # Test that --tree (built-in option) still works
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--tree", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("build", result.stdout)
-            # Should NOT execute the user's "show" task
-            self.assertNotIn("Running user's show task", result.stdout)
+                # Test that --list (built-in option) still works
+                result = self.runner.invoke(app, ["--list"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Available Tasks", result.stdout)
+                self.assertIn("show", result.stdout)
+                self.assertIn("build", result.stdout)
+
+                # Test that --tree (built-in option) still works
+                result = self.runner.invoke(app, ["--tree", "build"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("build", result.stdout)
+                # Should NOT execute the user's "show" task
+                self.assertNotIn("Running user's show task", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
             # Test that --init creates a new file (in a subdir to not conflict)
             init_dir = project_root / "subdir"
             init_dir.mkdir()
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--init"],
-                cwd=init_dir,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertTrue((init_dir / "tasktree.yaml").exists())
-            self.assertIn("Created", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(init_dir)
+                result = self.runner.invoke(app, ["--init"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertTrue((init_dir / "tasktree.yaml").exists())
+                self.assertIn("Created", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
     def test_double_dash_required_for_options(self):
         """Test that single-word options don't work - must use double-dash."""
@@ -156,26 +140,22 @@ build:
   cmd: echo "building"
 """)
 
-            # Single word "show" should be treated as a task name (and fail)
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "show", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            # This should fail because "show" task doesn't exist
-            self.assertNotEqual(result.returncode, 0)
-            self.assertIn("Task not found: show", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
 
-            # But --show should work
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--show", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("build:", result.stdout)
+                # Single word "show" should be treated as a task name (and fail)
+                result = self.runner.invoke(app, ["show", "build"])
+                # This should fail because "show" task doesn't exist
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertIn("Task not found: show", result.stdout)
+
+                # But --show should work
+                result = self.runner.invoke(app, ["--show", "build"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("build:", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
 
     def test_help_option_works(self):
@@ -191,26 +171,27 @@ build:
   cmd: echo "building"
 """)
 
-            # Test --help
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--help"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Task Tree", result.stdout)
-            self.assertIn("Usage:", result.stdout)
-            # Typer formats it with a box, so just check for "Options"
-            self.assertIn("Options", result.stdout)
-            self.assertIn("--help", result.stdout)
-            self.assertIn("--version", result.stdout)
-            self.assertIn("--list", result.stdout)
-            self.assertIn("--show", result.stdout)
-            self.assertIn("--tree", result.stdout)
-            self.assertIn("--dry-run", result.stdout)
-            self.assertIn("--init", result.stdout)
-            self.assertIn("--clean", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Test --help
+                result = self.runner.invoke(app, ["--help"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Task Tree", result.stdout)
+                self.assertIn("Usage:", result.stdout)
+                # Typer formats it with a box, so just check for "Options"
+                self.assertIn("Options", result.stdout)
+                self.assertIn("--help", result.stdout)
+                self.assertIn("--version", result.stdout)
+                self.assertIn("--list", result.stdout)
+                self.assertIn("--show", result.stdout)
+                self.assertIn("--tree", result.stdout)
+                self.assertIn("--dry-run", result.stdout)
+                self.assertIn("--init", result.stdout)
+                self.assertIn("--clean", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
 
 if __name__ == "__main__":

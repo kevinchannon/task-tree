@@ -1,14 +1,21 @@
 """Integration tests for --clean-state option and its aliases."""
 
-import subprocess
-import sys
+import os
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+from typer.testing import CliRunner
+
+from tasktree.cli import app
+
 
 class TestCleanState(unittest.TestCase):
     """Test that --clean-state and its aliases work correctly."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.runner = CliRunner()
 
     def test_clean_state_removes_state_file(self):
         """Test that --clean-state removes the .tasktree-state file."""
@@ -25,30 +32,25 @@ build:
 """)
 
             # Run a task to create state file
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+                result = self.runner.invoke(app, ["build"])
+                self.assertEqual(result.exit_code, 0)
 
-            # Verify state file was created
-            state_file = project_root / ".tasktree-state"
-            self.assertTrue(state_file.exists())
+                # Verify state file was created
+                state_file = project_root / ".tasktree-state"
+                self.assertTrue(state_file.exists())
 
-            # Run --clean-state
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--clean-state"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Removed", result.stdout)
+                # Run --clean-state
+                result = self.runner.invoke(app, ["--clean-state"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Removed", result.stdout)
 
-            # Verify state file was removed
-            self.assertFalse(state_file.exists())
+                # Verify state file was removed
+                self.assertFalse(state_file.exists())
+            finally:
+                os.chdir(original_cwd)
 
     def test_clean_alias_works(self):
         """Test that --clean works as an alias for --clean-state."""
@@ -65,30 +67,25 @@ build:
 """)
 
             # Run a task to create state file
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+                result = self.runner.invoke(app, ["build"])
+                self.assertEqual(result.exit_code, 0)
 
-            # Verify state file was created
-            state_file = project_root / ".tasktree-state"
-            self.assertTrue(state_file.exists())
+                # Verify state file was created
+                state_file = project_root / ".tasktree-state"
+                self.assertTrue(state_file.exists())
 
-            # Run --clean (short alias)
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--clean"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Removed", result.stdout)
+                # Run --clean (short alias)
+                result = self.runner.invoke(app, ["--clean"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Removed", result.stdout)
 
-            # Verify state file was removed
-            self.assertFalse(state_file.exists())
+                # Verify state file was removed
+                self.assertFalse(state_file.exists())
+            finally:
+                os.chdir(original_cwd)
 
     def test_reset_alias_works(self):
         """Test that --reset works as an alias for --clean-state."""
@@ -105,30 +102,25 @@ build:
 """)
 
             # Run a task to create state file
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "build"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+                result = self.runner.invoke(app, ["build"])
+                self.assertEqual(result.exit_code, 0)
 
-            # Verify state file was created
-            state_file = project_root / ".tasktree-state"
-            self.assertTrue(state_file.exists())
+                # Verify state file was created
+                state_file = project_root / ".tasktree-state"
+                self.assertTrue(state_file.exists())
 
-            # Run --reset
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--reset"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("Removed", result.stdout)
+                # Run --reset
+                result = self.runner.invoke(app, ["--reset"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("Removed", result.stdout)
 
-            # Verify state file was removed
-            self.assertFalse(state_file.exists())
+                # Verify state file was removed
+                self.assertFalse(state_file.exists())
+            finally:
+                os.chdir(original_cwd)
 
     def test_clean_state_when_no_state_file(self):
         """Test that --clean-state handles missing state file gracefully."""
@@ -148,14 +140,14 @@ build:
             self.assertFalse(state_file.exists())
 
             # Run --clean-state
-            result = subprocess.run(
-                [sys.executable, "-m", "tasktree.cli", "--clean-state"],
-                cwd=project_root,
-                capture_output=True,
-                text=True,
-            )
-            self.assertEqual(result.returncode, 0)
-            self.assertIn("No state file found", result.stdout)
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+                result = self.runner.invoke(app, ["--clean-state"])
+                self.assertEqual(result.exit_code, 0)
+                self.assertIn("No state file found", result.stdout)
+            finally:
+                os.chdir(original_cwd)
 
 
 if __name__ == "__main__":
