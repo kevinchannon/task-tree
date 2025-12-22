@@ -122,5 +122,126 @@ test:
             self.assertEqual(test_task.deps, ["build.compile"])
 
 
+class TestParseMultilineCommands(unittest.TestCase):
+    """Test parsing of different YAML multi-line command formats."""
+
+    def test_parse_single_line_command(self):
+        """Test parsing a single-line command (cmd: <string>)."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+build:
+  cmd: echo "single line"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            self.assertEqual(task.cmd, 'echo "single line"')
+
+    def test_parse_literal_block_scalar(self):
+        """Test parsing literal block scalar (cmd: |) which preserves newlines."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+build:
+  cmd: |
+    echo "line 1"
+    echo "line 2"
+    echo "line 3"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            # Literal block scalar preserves newlines
+            expected = 'echo "line 1"\necho "line 2"\necho "line 3"\n'
+            self.assertEqual(task.cmd, expected)
+
+    def test_parse_folded_block_scalar(self):
+        """Test parsing folded block scalar (cmd: >) which folds newlines into spaces."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+build:
+  cmd: >
+    echo "this is a very long command"
+    "that spans multiple lines"
+    "but becomes a single line"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            # Folded block scalar converts newlines to spaces
+            expected = 'echo "this is a very long command" "that spans multiple lines" "but becomes a single line"\n'
+            self.assertEqual(task.cmd, expected)
+
+    def test_parse_literal_block_with_shell_commands(self):
+        """Test parsing literal block with actual shell commands."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+clean:
+  cmd: |
+    rm -rf dist/
+    rm -rf build/
+    find . -name __pycache__ -exec rm -rf {} +
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["clean"]
+            # Should preserve each command on its own line
+            self.assertIn("rm -rf dist/", task.cmd)
+            self.assertIn("rm -rf build/", task.cmd)
+            self.assertIn("find . -name __pycache__", task.cmd)
+            # Verify newlines are preserved
+            lines = task.cmd.strip().split("\n")
+            self.assertEqual(len(lines), 3)
+
+    def test_parse_literal_block_with_variables(self):
+        """Test parsing literal block that uses shell variables."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+deploy:
+  cmd: |
+    VERSION=$(cat version.txt)
+    echo "Deploying version $VERSION"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["deploy"]
+            # Should preserve the multi-line shell script
+            self.assertIn("VERSION=$(cat version.txt)", task.cmd)
+            self.assertIn('echo "Deploying version $VERSION"', task.cmd)
+
+    def test_parse_literal_block_strip_final_newlines(self):
+        """Test that literal block scalar (|-) strips final newlines."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+build:
+  cmd: |-
+    echo "line 1"
+    echo "line 2"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            # |- strips the final newline
+            expected = 'echo "line 1"\necho "line 2"'
+            self.assertEqual(task.cmd, expected)
+
+
 if __name__ == "__main__":
     unittest.main()
