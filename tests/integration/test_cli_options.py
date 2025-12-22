@@ -1,6 +1,7 @@
 """Integration tests for CLI options vs user task names."""
 
 import os
+import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,6 +9,12 @@ from tempfile import TemporaryDirectory
 from typer.testing import CliRunner
 
 from tasktree.cli import app
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+    return ansi_escape.sub('', text)
 
 
 class TestCLIOptionsNoClash(unittest.TestCase):
@@ -179,18 +186,22 @@ build:
                 # Test --help
                 result = self.runner.invoke(app, ["--help"], env=self.env)
                 self.assertEqual(result.exit_code, 0)
-                self.assertIn("Task Tree", result.stdout)
-                self.assertIn("Usage:", result.stdout)
+
+                # Strip ANSI codes for reliable assertions
+                output = strip_ansi_codes(result.stdout)
+
+                self.assertIn("Task Tree", output)
+                self.assertIn("Usage:", output)
                 # Typer formats it with a box, so just check for "Options"
-                self.assertIn("Options", result.stdout)
-                self.assertIn("--help", result.stdout)
-                self.assertIn("--version", result.stdout)
-                self.assertIn("--list", result.stdout)
-                self.assertIn("--show", result.stdout)
-                self.assertIn("--tree", result.stdout)
-                self.assertIn("--dry-run", result.stdout)
-                self.assertIn("--init", result.stdout)
-                self.assertIn("--clean", result.stdout)
+                self.assertIn("Options", output)
+                self.assertIn("--help", output)
+                self.assertIn("--version", output)
+                self.assertIn("--list", output)
+                self.assertIn("--show", output)
+                self.assertIn("--tree", output)
+                self.assertIn("--dry-run", output)
+                self.assertIn("--init", output)
+                self.assertIn("--clean", output)
             finally:
                 os.chdir(original_cwd)
 

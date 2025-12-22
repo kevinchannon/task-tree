@@ -1,6 +1,7 @@
 """Integration tests for --clean-state option and its aliases."""
 
 import os
+import re
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -8,6 +9,12 @@ from tempfile import TemporaryDirectory
 from typer.testing import CliRunner
 
 from tasktree.cli import app
+
+
+def strip_ansi_codes(text: str) -> str:
+    """Remove ANSI escape sequences from text."""
+    ansi_escape = re.compile(r'\x1b\[[0-9;]*m')
+    return ansi_escape.sub('', text)
 
 
 class TestCleanState(unittest.TestCase):
@@ -46,7 +53,7 @@ build:
                 # Run --clean-state
                 result = self.runner.invoke(app, ["--clean-state"], env=self.env)
                 self.assertEqual(result.exit_code, 0)
-                self.assertIn("Removed", result.stdout)
+                self.assertIn("Removed", strip_ansi_codes(result.stdout))
 
                 # Verify state file was removed
                 self.assertFalse(state_file.exists())
@@ -81,7 +88,7 @@ build:
                 # Run --clean (short alias)
                 result = self.runner.invoke(app, ["--clean"], env=self.env)
                 self.assertEqual(result.exit_code, 0)
-                self.assertIn("Removed", result.stdout)
+                self.assertIn("Removed", strip_ansi_codes(result.stdout))
 
                 # Verify state file was removed
                 self.assertFalse(state_file.exists())
@@ -116,7 +123,7 @@ build:
                 # Run --reset
                 result = self.runner.invoke(app, ["--reset"], env=self.env)
                 self.assertEqual(result.exit_code, 0)
-                self.assertIn("Removed", result.stdout)
+                self.assertIn("Removed", strip_ansi_codes(result.stdout))
 
                 # Verify state file was removed
                 self.assertFalse(state_file.exists())
@@ -146,7 +153,7 @@ build:
                 os.chdir(project_root)
                 result = self.runner.invoke(app, ["--clean-state"], env=self.env)
                 self.assertEqual(result.exit_code, 0)
-                self.assertIn("No state file found", result.stdout)
+                self.assertIn("No state file found", strip_ansi_codes(result.stdout))
             finally:
                 os.chdir(original_cwd)
 
