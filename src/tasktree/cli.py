@@ -248,11 +248,8 @@ def main(
     Examples:
 
       tt build                     # Run the 'build' task
-
       tt deploy prod region=us-1   # Run 'deploy' with arguments
-
       tt --list                    # List all tasks
-
       tt --tree test               # Show dependency tree for 'test'
     """
     # Handle list option
