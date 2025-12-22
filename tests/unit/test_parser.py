@@ -122,6 +122,360 @@ test:
             self.assertEqual(test_task.deps, ["build.compile"])
 
 
+class TestParseImports(unittest.TestCase):
+    """Test parsing of recipe imports with various edge cases."""
+
+    def test_multiple_imports(self):
+        """Test importing multiple files."""
+        with TemporaryDirectory() as tmpdir:
+            # Create first import
+            (Path(tmpdir) / "build.yaml").write_text("""
+compile:
+  cmd: cargo build
+""")
+            # Create second import
+            (Path(tmpdir) / "test.yaml").write_text("""
+unit:
+  cmd: cargo test --lib
+integration:
+  cmd: cargo test --test '*'
+""")
+
+            # Create main recipe
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: build.yaml
+    as: build
+  - file: test.yaml
+    as: test
+
+all:
+  deps: [build.compile, test.unit, test.integration]
+  cmd: echo "All done"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertIn("build.compile", recipe.tasks)
+            self.assertIn("test.unit", recipe.tasks)
+            self.assertIn("test.integration", recipe.tasks)
+            self.assertIn("all", recipe.tasks)
+
+            all_task = recipe.tasks["all"]
+            self.assertEqual(all_task.deps, ["build.compile", "test.unit", "test.integration"])
+
+    @unittest.expectedFailure
+    def test_nested_imports(self):
+        """Test that imported files can also have imports (nested imports).
+
+        NOTE: This feature is not currently implemented. Tasks from nested imports
+        are not included in the final recipe.
+        """
+        with TemporaryDirectory() as tmpdir:
+            # Create deepest level import
+            (Path(tmpdir) / "base.yaml").write_text("""
+setup:
+  cmd: echo "base setup"
+""")
+
+            # Create middle level import that imports base
+            (Path(tmpdir) / "common.yaml").write_text("""
+import:
+  - file: base.yaml
+    as: base
+
+prepare:
+  deps: [base.setup]
+  cmd: echo "common prepare"
+""")
+
+            # Create main recipe that imports common
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: common.yaml
+    as: common
+
+build:
+  deps: [common.prepare, common.base.setup]
+  cmd: echo "building"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertIn("common.base.setup", recipe.tasks)
+            self.assertIn("common.prepare", recipe.tasks)
+            self.assertIn("build", recipe.tasks)
+
+            build_task = recipe.tasks["build"]
+            self.assertEqual(build_task.deps, ["common.prepare", "common.base.setup"])
+
+    @unittest.expectedFailure
+    def test_deep_nested_imports(self):
+        """Test deeply nested imports (A -> B -> C -> D).
+
+        NOTE: This feature is not currently implemented. Nested imports beyond
+        one level are not supported.
+        """
+        with TemporaryDirectory() as tmpdir:
+            # Level 4 (deepest)
+            (Path(tmpdir) / "level4.yaml").write_text("""
+task4:
+  cmd: echo "level 4"
+""")
+
+            # Level 3
+            (Path(tmpdir) / "level3.yaml").write_text("""
+import:
+  - file: level4.yaml
+    as: l4
+
+task3:
+  deps: [l4.task4]
+  cmd: echo "level 3"
+""")
+
+            # Level 2
+            (Path(tmpdir) / "level2.yaml").write_text("""
+import:
+  - file: level3.yaml
+    as: l3
+
+task2:
+  deps: [l3.task3]
+  cmd: echo "level 2"
+""")
+
+            # Level 1 (main)
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: level2.yaml
+    as: l2
+
+task1:
+  deps: [l2.task2]
+  cmd: echo "level 1"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertIn("l2.l3.l4.task4", recipe.tasks)
+            self.assertIn("l2.l3.task3", recipe.tasks)
+            self.assertIn("l2.task2", recipe.tasks)
+            self.assertIn("task1", recipe.tasks)
+
+    @unittest.expectedFailure
+    def test_diamond_import_topology(self):
+        """Test diamond import pattern: A imports B and C, both import D.
+
+        NOTE: This feature is not currently implemented. Nested imports are not
+        supported, so the base.setup task is not available through the import chain.
+        """
+        with TemporaryDirectory() as tmpdir:
+            # Base file (D)
+            (Path(tmpdir) / "base.yaml").write_text("""
+setup:
+  cmd: echo "base setup"
+""")
+
+            # Left branch (B)
+            (Path(tmpdir) / "left.yaml").write_text("""
+import:
+  - file: base.yaml
+    as: base
+
+left-task:
+  deps: [base.setup]
+  cmd: echo "left"
+""")
+
+            # Right branch (C)
+            (Path(tmpdir) / "right.yaml").write_text("""
+import:
+  - file: base.yaml
+    as: base
+
+right-task:
+  deps: [base.setup]
+  cmd: echo "right"
+""")
+
+            # Main file (A)
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: left.yaml
+    as: left
+  - file: right.yaml
+    as: right
+
+main:
+  deps: [left.left-task, right.right-task]
+  cmd: echo "main"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            # Both paths to base.setup should exist
+            self.assertIn("left.base.setup", recipe.tasks)
+            self.assertIn("right.base.setup", recipe.tasks)
+            self.assertIn("left.left-task", recipe.tasks)
+            self.assertIn("right.right-task", recipe.tasks)
+            self.assertIn("main", recipe.tasks)
+
+    def test_import_file_not_found(self):
+        """Test that importing a non-existent file raises an error."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: nonexistent.yaml
+    as: missing
+
+task:
+  cmd: echo "test"
+""")
+
+            with self.assertRaises(FileNotFoundError):
+                parse_recipe(recipe_path)
+
+    def test_import_with_relative_paths(self):
+        """Test importing files from subdirectories."""
+        with TemporaryDirectory() as tmpdir:
+            # Create nested directory structure
+            subdir = Path(tmpdir) / "tasks" / "build"
+            subdir.mkdir(parents=True)
+
+            (subdir / "compile.yaml").write_text("""
+rust:
+  cmd: cargo build
+python:
+  cmd: python -m build
+""")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: tasks/build/compile.yaml
+    as: compile
+
+all:
+  deps: [compile.rust, compile.python]
+  cmd: echo "done"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertIn("compile.rust", recipe.tasks)
+            self.assertIn("compile.python", recipe.tasks)
+
+    def test_import_preserves_task_properties(self):
+        """Test that imported tasks preserve all their properties."""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "import.yaml").write_text("""
+build:
+  desc: Build the project
+  inputs: ["src/**/*.rs"]
+  outputs: [target/release/bin]
+  working_dir: subproject
+  args: [environment, region=eu-west-1]
+  cmd: cargo build --release
+""")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: import.yaml
+    as: imported
+""")
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["imported.build"]
+
+            self.assertEqual(task.desc, "Build the project")
+            self.assertEqual(task.inputs, ["src/**/*.rs"])
+            self.assertEqual(task.outputs, ["target/release/bin"])
+            self.assertEqual(task.working_dir, "subproject")
+            self.assertEqual(task.args, ["environment", "region=eu-west-1"])
+            self.assertEqual(task.cmd, "cargo build --release")
+
+    def test_cross_import_dependencies(self):
+        """Test tasks in one import depending on tasks from another import."""
+        with TemporaryDirectory() as tmpdir:
+            # First import defines build
+            (Path(tmpdir) / "build.yaml").write_text("""
+compile:
+  cmd: cargo build
+""")
+
+            # Second import depends on first import
+            (Path(tmpdir) / "test.yaml").write_text("""
+run-tests:
+  deps: [build.compile]
+  cmd: cargo test
+""")
+
+            # Main recipe imports both
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: build.yaml
+    as: build
+  - file: test.yaml
+    as: test
+""")
+
+            recipe = parse_recipe(recipe_path)
+
+            # The dependency should be rewritten to use the full namespace
+            test_task = recipe.tasks["test.run-tests"]
+            # Note: This tests current behavior - the dep might stay as "build.compile"
+            # or might need namespace resolution
+            self.assertEqual(test_task.deps, ["build.compile"])
+
+    def test_empty_import_file(self):
+        """Test importing a file with no tasks."""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "empty.yaml").write_text("")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: empty.yaml
+    as: empty
+
+task:
+  cmd: echo "test"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            # Should not crash, just have no tasks from the import
+            self.assertIn("task", recipe.tasks)
+            # No tasks should be prefixed with "empty."
+            empty_tasks = [name for name in recipe.tasks if name.startswith("empty.")]
+            self.assertEqual(len(empty_tasks), 0)
+
+    def test_import_file_with_only_whitespace(self):
+        """Test importing a file that only contains whitespace/comments."""
+        with TemporaryDirectory() as tmpdir:
+            (Path(tmpdir) / "whitespace.yaml").write_text("""
+# This file only has comments
+
+
+# And whitespace
+""")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+import:
+  - file: whitespace.yaml
+    as: ws
+
+task:
+  cmd: echo "test"
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertIn("task", recipe.tasks)
+
+
 class TestParseMultilineCommands(unittest.TestCase):
     """Test parsing of different YAML multi-line command formats."""
 
