@@ -206,5 +206,148 @@ build:
                 os.chdir(original_cwd)
 
 
+class TestForceOption(unittest.TestCase):
+    """Test the --force/-f option forces re-run of all tasks."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.runner = CliRunner()
+        self.env = {"NO_COLOR": "1"}
+
+    def test_force_option_reruns_fresh_tasks(self):
+        """Test --force causes fresh tasks to re-run."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create input and recipe
+            input_file = project_root / "input.txt"
+            input_file.write_text("initial")
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+build:
+  inputs: [input.txt]
+  outputs: [output.txt]
+  cmd: cat input.txt > output.txt
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # First run - task executes
+                result = self.runner.invoke(app, ["build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                self.assertTrue((project_root / "output.txt").exists())
+                output_time_1 = (project_root / "output.txt").stat().st_mtime
+
+                # Second run - task skips (fresh)
+                result = self.runner.invoke(app, ["build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                output_time_2 = (project_root / "output.txt").stat().st_mtime
+                self.assertEqual(output_time_1, output_time_2)  # Not modified
+
+                # Third run with --force - task executes even though fresh
+                import time
+                time.sleep(0.01)  # Ensure mtime can change
+                result = self.runner.invoke(app, ["--force", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                output_time_3 = (project_root / "output.txt").stat().st_mtime
+                self.assertGreater(output_time_3, output_time_2)  # Was modified
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_force_short_flag_works(self):
+        """Test -f short flag works as alias for --force."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+build:
+  outputs: [output.txt]
+  cmd: echo "built" > output.txt
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run once
+                result = self.runner.invoke(app, ["build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                output_time_1 = (project_root / "output.txt").stat().st_mtime
+
+                # Run with -f (short flag)
+                import time
+                time.sleep(0.01)
+                result = self.runner.invoke(app, ["-f", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                output_time_2 = (project_root / "output.txt").stat().st_mtime
+                self.assertGreater(output_time_2, output_time_1)
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_force_reruns_dependencies(self):
+        """Test --force re-runs all dependencies in chain."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+lint:
+  outputs: [lint.log]
+  cmd: echo "linting" > lint.log
+
+build:
+  deps: [lint]
+  outputs: [build.log]
+  cmd: echo "building" > build.log
+
+test:
+  deps: [build]
+  outputs: [test.log]
+  cmd: echo "testing" > test.log
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # First run - all execute
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                lint_time_1 = (project_root / "lint.log").stat().st_mtime
+                build_time_1 = (project_root / "build.log").stat().st_mtime
+                test_time_1 = (project_root / "test.log").stat().st_mtime
+
+                # Second run - all skip (fresh)
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                lint_time_2 = (project_root / "lint.log").stat().st_mtime
+                build_time_2 = (project_root / "build.log").stat().st_mtime
+                test_time_2 = (project_root / "test.log").stat().st_mtime
+                self.assertEqual(lint_time_1, lint_time_2)
+                self.assertEqual(build_time_1, build_time_2)
+                self.assertEqual(test_time_1, test_time_2)
+
+                # Third run with --force - all re-execute
+                import time
+                time.sleep(0.01)
+                result = self.runner.invoke(app, ["--force", "test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                lint_time_3 = (project_root / "lint.log").stat().st_mtime
+                build_time_3 = (project_root / "build.log").stat().st_mtime
+                test_time_3 = (project_root / "test.log").stat().st_mtime
+                self.assertGreater(lint_time_3, lint_time_2)
+                self.assertGreater(build_time_3, build_time_2)
+                self.assertGreater(test_time_3, test_time_2)
+
+            finally:
+                os.chdir(original_cwd)
+
+
 if __name__ == "__main__":
     unittest.main()
