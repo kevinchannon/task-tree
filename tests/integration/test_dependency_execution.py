@@ -88,22 +88,22 @@ test:
             recipe_file.write_text("""
 setup:
   outputs: [setup.log]
-  cmd: echo "setup" > setup.log
+  cmd: echo setup > setup.log
 
 build:
   deps: [setup]
   outputs: [build.log]
-  cmd: echo "build" > build.log
+  cmd: echo build > build.log
 
 test:
   deps: [setup]
   outputs: [test.log]
-  cmd: echo "test" > test.log
+  cmd: echo test > test.log
 
 deploy:
   deps: [build, test]
   outputs: [deploy.log]
-  cmd: echo "deploy" > deploy.log
+  cmd: echo deploy > deploy.log
 """)
 
             original_cwd = os.getcwd()

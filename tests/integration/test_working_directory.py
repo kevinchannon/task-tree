@@ -78,7 +78,7 @@ build:
 build:
   working_dir: project
   outputs: [target/bin]
-  cmd: mkdir -p target && echo "binary" > target/bin
+  cmd: mkdir -p target && echo binary > target/bin
 """)
 
             original_cwd = os.getcwd()
