@@ -17,13 +17,13 @@ pipx install tasktree
 For the latest unreleased version from GitHub:
 
 ```bash
-pipx install git+https://github.com/kevinchannon/tasktree.git
+pipx install git+https://github.com/kevinchannon/task-tree.git
 ```
 
 Or to install from a local clone:
 
 ```bash
-git clone https://github.com/kevinchannon/tasktree.git
+git clone https://github.com/kevinchannon/task-tree.git
 cd tasktree
 pipx install .
 ```
@@ -283,7 +283,7 @@ State file uses JSON format for simplicity and standard library compatibility.
 
 ```bash
 # Clone repository
-git clone https://github.com/kevinchannon/tasktree.git
+git clone https://github.com/kevinchannon/task-tree.git
 cd tasktree
 
 # Install uv (if not already installed)
@@ -349,7 +349,7 @@ git push origin v1.0.0
    - Publish to PyPI
 
 4. Verify the release:
-   - GitHub: https://github.com/kevinchannon/tasktree/releases
+   - GitHub: https://github.com/kevinchannon/task-tree/releases
    - PyPI: https://pypi.org/kevinchannon/tasktree/
    - Test: `pipx install --force tasktree`
 
@@ -359,15 +359,3 @@ Follow semantic versioning:
 - `v1.0.0` - Major release (breaking changes)
 - `v1.1.0` - Minor release (new features, backward compatible)
 - `v1.1.1` - Patch release (bug fixes)
-
-### PyPI Trusted Publishing Setup
-
-Before the first release, configure trusted publishing on PyPI:
-
-1. Go to https://pypi.org/manage/account/publishing/
-2. Add a new publisher:
-   - **PyPI Project Name**: `tasktree`
-   - **Owner**: `kevinchannon`
-   - **Repository name**: `task-tree`
-   - **Workflow name**: `release.yml`
-   - **Environment name**: (leave blank)
