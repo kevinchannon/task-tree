@@ -1,6 +1,6 @@
 # Task Tree (tt)
 
-[![Tests](https://github.com/kevinchannon/tasktree/actions/workflows/test.yml/badge.svg)](https://github.com/kevinchannon/tasktree/actions/workflows/test.yml)
+[![Tests](https://github.com/kevinchannon/task-tree/actions/workflows/test.yml/badge.svg)](https://github.com/kevinchannon/task-tree/actions/workflows/test.yml)
 
 A task automation tool that combines simple command execution with intelligent dependency tracking and incremental execution.
 
@@ -350,7 +350,7 @@ git push origin v1.0.0
 
 4. Verify the release:
    - GitHub: https://github.com/kevinchannon/tasktree/releases
-   - PyPI: https://pypi.org/project/tasktree/
+   - PyPI: https://pypi.org/kevinchannon/tasktree/
    - Test: `pipx install --force tasktree`
 
 ### Version Numbering
@@ -359,3 +359,15 @@ Follow semantic versioning:
 - `v1.0.0` - Major release (breaking changes)
 - `v1.1.0` - Minor release (new features, backward compatible)
 - `v1.1.1` - Patch release (bug fixes)
+
+### PyPI Trusted Publishing Setup
+
+Before the first release, configure trusted publishing on PyPI:
+
+1. Go to https://pypi.org/manage/account/publishing/
+2. Add a new publisher:
+   - **PyPI Project Name**: `tasktree`
+   - **Owner**: `kevinchannon`
+   - **Repository name**: `task-tree`
+   - **Workflow name**: `release.yml`
+   - **Environment name**: (leave blank)
