@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/kevinchannon/task-tree/actions/workflows/test.yml/badge.svg)](https://github.com/kevinchannon/task-tree/actions/workflows/test.yml)
 
-A task automation tool that combines simple command execution with intelligent dependency tracking and incremental execution.
+A task automation tool that combines simple command execution with dependency tracking and incremental execution.
 
 ## Installation
 

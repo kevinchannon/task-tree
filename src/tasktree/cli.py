@@ -240,9 +240,9 @@ def main(
         None, help="Task name and arguments"
     ),
 ):
-    """Task Tree - A task automation tool with intelligent incremental execution.
+    """Task Tree - A task automation tool with incremental execution.
 
-    Run tasks defined in tasktree.yaml with intelligent dependency tracking
+    Run tasks defined in tasktree.yaml with dependency tracking
     and incremental execution.
 
     Examples:

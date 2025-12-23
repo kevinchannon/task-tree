@@ -1,7 +1,7 @@
 [project]
 name = "tasktree"
 version = "0.0.0.dev0+local"
-description = "A task automation tool with intelligent incremental execution"
+description = "A task automation tool with incremental execution"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
