@@ -94,13 +94,25 @@ class Recipe:
 
 
 def find_recipe_file(start_dir: Path | None = None) -> Path | None:
-    """Find recipe file (tasktree.yaml or tt.yaml) in current or parent directories.
+    """Find recipe file in current or parent directories.
+
+    Looks for recipe files matching these patterns (in order of preference):
+    - tasktree.yaml
+    - tasktree.yml
+    - tt.yaml
+    - *.tasks
+
+    If multiple recipe files are found in the same directory, raises ValueError
+    with instructions to use --tasks option.
 
     Args:
         start_dir: Directory to start searching from (defaults to cwd)
 
     Returns:
         Path to recipe file if found, None otherwise
+
+    Raises:
+        ValueError: If multiple recipe files found in the same directory
     """
     if start_dir is None:
         start_dir = Path.cwd()
@@ -109,10 +121,30 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
 
     # Search up the directory tree
     while True:
-        for filename in ["tasktree.yaml", "tt.yaml"]:
+        candidates = []
+
+        # Check for exact filenames first
+        for filename in ["tasktree.yaml", "tasktree.yml", "tt.yaml"]:
             recipe_path = current / filename
             if recipe_path.exists():
-                return recipe_path
+                candidates.append(recipe_path)
+
+        # Check for *.tasks files
+        for tasks_file in current.glob("*.tasks"):
+            if tasks_file.is_file():
+                candidates.append(tasks_file)
+
+        if len(candidates) > 1:
+            # Multiple recipe files found - ambiguous
+            filenames = [c.name for c in candidates]
+            raise ValueError(
+                f"Multiple recipe files found in {current}:\n"
+                f"  {', '.join(filenames)}\n\n"
+                f"Please specify which file to use with --tasks (-T):\n"
+                f"  tt --tasks {filenames[0]} <task-name>"
+            )
+        elif len(candidates) == 1:
+            return candidates[0]
 
         # Move to parent directory
         parent = current.parent

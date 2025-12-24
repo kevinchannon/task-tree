@@ -712,5 +712,164 @@ tasks:
                 os.chdir(original_cwd)
 
 
+class TestTasksFileOption(unittest.TestCase):
+    """Test the --tasks/-T option for specifying recipe files."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.runner = CliRunner()
+        self.env = {"NO_COLOR": "1"}
+
+    def test_tasks_option_with_yml_extension(self):
+        """Test --tasks option works with .yml extension."""
+        with self.runner.isolated_filesystem():
+            recipe_file = Path("tasktree.yml")
+            recipe_file.write_text(
+                """
+tasks:
+  build:
+    desc: Build with yml
+    cmd: echo "Building from yml"
+"""
+            )
+
+            result = self.runner.invoke(app, ["--tasks", "tasktree.yml", "build"], env=self.env)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("build", result.stdout)
+            self.assertIn("completed successfully", result.stdout)
+
+    def test_tasks_option_with_tasks_extension(self):
+        """Test --tasks option works with .tasks extension."""
+        with self.runner.isolated_filesystem():
+            recipe_file = Path("build.tasks")
+            recipe_file.write_text(
+                """
+tasks:
+  compile:
+    desc: Compile code
+    cmd: echo "Compiling"
+"""
+            )
+
+            result = self.runner.invoke(app, ["--tasks", "build.tasks", "compile"], env=self.env)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("compile", result.stdout)
+            self.assertIn("completed successfully", result.stdout)
+
+    def test_tasks_option_with_short_flag(self):
+        """Test -T short flag works."""
+        with self.runner.isolated_filesystem():
+            recipe_file = Path("my.tasks")
+            recipe_file.write_text(
+                """
+tasks:
+  test:
+    cmd: echo "Testing"
+"""
+            )
+
+            result = self.runner.invoke(app, ["-T", "my.tasks", "test"], env=self.env)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("test", result.stdout)
+            self.assertIn("completed successfully", result.stdout)
+
+    def test_multiple_recipe_files_without_tasks_option_fails(self):
+        """Test that having multiple recipe files without --tasks raises error."""
+        with self.runner.isolated_filesystem():
+            # Create multiple recipe files
+            Path("tasktree.yaml").write_text("tasks:\n  build:\n    cmd: echo yaml")
+            Path("tasktree.yml").write_text("tasks:\n  build:\n    cmd: echo yml")
+
+            # Should fail with helpful error message
+            result = self.runner.invoke(app, ["build"], env=self.env)
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Multiple recipe files found", result.stdout)
+            self.assertIn("--tasks", result.stdout)
+
+    def test_tasks_option_selects_specific_file_when_multiple_exist(self):
+        """Test --tasks option selects specific file when multiple exist."""
+        with self.runner.isolated_filesystem():
+            # Create multiple recipe files with different task names
+            Path("tasktree.yaml").write_text(
+                """
+tasks:
+  yaml-task:
+    cmd: echo "From yaml"
+"""
+            )
+            Path("build.tasks").write_text(
+                """
+tasks:
+  tasks-task:
+    cmd: echo "From tasks"
+"""
+            )
+
+            # Use --tasks to select the .tasks file - should be able to run tasks-task
+            result = self.runner.invoke(app, ["--tasks", "build.tasks", "tasks-task"], env=self.env)
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("tasks-task", result.stdout)
+
+            # Should not be able to run yaml-task from build.tasks
+            result = self.runner.invoke(app, ["--tasks", "build.tasks", "yaml-task"], env=self.env)
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Task not found", result.stdout)
+
+    def test_tasks_option_with_list(self):
+        """Test --tasks option works with --list."""
+        with self.runner.isolated_filesystem():
+            recipe_file = Path("custom.tasks")
+            recipe_file.write_text(
+                """
+tasks:
+  task1:
+    desc: First task
+    cmd: echo one
+  task2:
+    desc: Second task
+    cmd: echo two
+"""
+            )
+
+            result = self.runner.invoke(app, ["--tasks", "custom.tasks", "--list"], env=self.env)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("task1", result.stdout)
+            self.assertIn("task2", result.stdout)
+            self.assertIn("First task", result.stdout)
+
+    def test_tasks_option_with_show(self):
+        """Test --tasks option works with --show."""
+        with self.runner.isolated_filesystem():
+            recipe_file = Path("my.tasks")
+            recipe_file.write_text(
+                """
+tasks:
+  build:
+    desc: Build task
+    cmd: echo building
+"""
+            )
+
+            result = self.runner.invoke(app, ["--tasks", "my.tasks", "--show", "build"], env=self.env)
+
+            self.assertEqual(result.exit_code, 0)
+            self.assertIn("build:", result.stdout)
+            self.assertIn("desc: Build task", result.stdout)
+
+    def test_tasks_option_with_nonexistent_file(self):
+        """Test --tasks option with nonexistent file shows error."""
+        with self.runner.isolated_filesystem():
+            result = self.runner.invoke(app, ["--tasks", "nonexistent.yaml", "build"], env=self.env)
+
+            self.assertNotEqual(result.exit_code, 0)
+            self.assertIn("Recipe file not found", result.stdout)
+            self.assertIn("nonexistent.yaml", result.stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

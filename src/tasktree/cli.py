@@ -26,11 +26,11 @@ app = typer.Typer(
 console = Console()
 
 
-def _list_tasks():
+def _list_tasks(tasks_file: Optional[str] = None):
     """List all available tasks with descriptions."""
-    recipe = _get_recipe()
+    recipe = _get_recipe(tasks_file)
     if recipe is None:
-        console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
+        console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
         raise typer.Exit(1)
 
     table = Table(title="Available Tasks")
@@ -45,11 +45,11 @@ def _list_tasks():
     console.print(table)
 
 
-def _show_task(task_name: str):
+def _show_task(task_name: str, tasks_file: Optional[str] = None):
     """Show task definition with syntax highlighting."""
-    recipe = _get_recipe()
+    recipe = _get_recipe(tasks_file)
     if recipe is None:
-        console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
+        console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
         raise typer.Exit(1)
 
     task = recipe.get_task(task_name)
@@ -94,11 +94,11 @@ def _show_task(task_name: str):
     console.print(syntax)
 
 
-def _show_tree(task_name: str):
+def _show_tree(task_name: str, tasks_file: Optional[str] = None):
     """Show dependency tree structure."""
-    recipe = _get_recipe()
+    recipe = _get_recipe(tasks_file)
     if recipe is None:
-        console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
+        console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
         raise typer.Exit(1)
 
     task = recipe.get_task(task_name)
@@ -178,6 +178,7 @@ def main(
     list_opt: Optional[bool] = typer.Option(None, "--list", "-l", help="List all available tasks"),
     show: Optional[str] = typer.Option(None, "--show", "-s", help="Show task definition"),
     tree: Optional[str] = typer.Option(None, "--tree", "-t", help="Show dependency tree"),
+    tasks_file: Optional[str] = typer.Option(None, "--tasks", "-T", help="Path to recipe file (tasktree.yaml, *.tasks, etc.)"),
     init: Optional[bool] = typer.Option(
         None, "--init", "-i", help="Create a blank tasktree.yaml"
     ),
@@ -217,15 +218,15 @@ def main(
     """
 
     if list_opt:
-        _list_tasks()
+        _list_tasks(tasks_file)
         raise typer.Exit()
 
     if show:
-        _show_task(show)
+        _show_task(show, tasks_file)
         raise typer.Exit()
 
     if tree:
-        _show_tree(tree)
+        _show_tree(tree, tasks_file)
         raise typer.Exit()
 
     if init:
@@ -233,17 +234,17 @@ def main(
         raise typer.Exit()
 
     if clean or clean_state or reset:
-        _clean_state()
+        _clean_state(tasks_file)
         raise typer.Exit()
 
     if task_args:
         # --only implies --force
         force_execution = force or only or False
-        _execute_dynamic_task(task_args, force=force_execution, only=only or False, env=env)
+        _execute_dynamic_task(task_args, force=force_execution, only=only or False, env=env, tasks_file=tasks_file)
     else:
-        recipe = _get_recipe()
+        recipe = _get_recipe(tasks_file)
         if recipe is None:
-            console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
+            console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
             console.print("Run [cyan]tt --init[/cyan] to create a blank recipe file")
             raise typer.Exit(1)
 
@@ -254,13 +255,19 @@ def main(
         console.print("Use [cyan]tt <task-name>[/cyan] to run a task")
 
 
-def _clean_state() -> None:
+def _clean_state(tasks_file: Optional[str] = None) -> None:
     """Remove the .tasktree-state file to reset task execution state."""
-    recipe_path = find_recipe_file()
-    if recipe_path is None:
-        console.print("[yellow]No recipe file found[/yellow]")
-        console.print("State file location depends on recipe file location")
-        raise typer.Exit(1)
+    if tasks_file:
+        recipe_path = Path(tasks_file)
+        if not recipe_path.exists():
+            console.print(f"[red]Recipe file not found: {tasks_file}[/red]")
+            raise typer.Exit(1)
+    else:
+        recipe_path = find_recipe_file()
+        if recipe_path is None:
+            console.print("[yellow]No recipe file found[/yellow]")
+            console.print("State file location depends on recipe file location")
+            raise typer.Exit(1)
 
     project_root = recipe_path.parent
     state_path = project_root / ".tasktree-state"
@@ -273,11 +280,26 @@ def _clean_state() -> None:
         console.print(f"[yellow]No state file found at {state_path}[/yellow]")
 
 
-def _get_recipe() -> Optional[Recipe]:
-    """Get parsed recipe or None if not found."""
-    recipe_path = find_recipe_file()
-    if recipe_path is None:
-        return None
+def _get_recipe(recipe_file: Optional[str] = None) -> Optional[Recipe]:
+    """Get parsed recipe or None if not found.
+
+    Args:
+        recipe_file: Optional path to recipe file. If not provided, searches for recipe file.
+    """
+    if recipe_file:
+        recipe_path = Path(recipe_file)
+        if not recipe_path.exists():
+            console.print(f"[red]Recipe file not found: {recipe_file}[/red]")
+            raise typer.Exit(1)
+    else:
+        try:
+            recipe_path = find_recipe_file()
+            if recipe_path is None:
+                return None
+        except ValueError as e:
+            # Multiple recipe files found
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1)
 
     try:
         return parse_recipe(recipe_path)
@@ -286,16 +308,16 @@ def _get_recipe() -> Optional[Recipe]:
         raise typer.Exit(1)
 
 
-def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = False, env: Optional[str] = None) -> None:
+def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = False, env: Optional[str] = None, tasks_file: Optional[str] = None) -> None:
     if not args:
         return
 
     task_name = args[0]
     task_args = args[1:]
 
-    recipe = _get_recipe()
+    recipe = _get_recipe(tasks_file)
     if recipe is None:
-        console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
+        console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
         raise typer.Exit(1)
 
     # Apply global environment override if provided

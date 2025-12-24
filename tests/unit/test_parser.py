@@ -910,8 +910,8 @@ class TestFindRecipeFile(unittest.TestCase):
             result = find_recipe_file(project_root)
             self.assertIsNone(result)
 
-    def test_find_recipe_file_prefers_tasktree(self):
-        """Test prefers tasktree.yaml over tt.yaml."""
+    def test_find_recipe_file_multiple_files_raises_error(self):
+        """Test raises error when multiple recipe files found."""
         with TemporaryDirectory() as tmpdir:
             project_root = Path(tmpdir).resolve()
             tasktree_path = project_root / "tasktree.yaml"
@@ -921,8 +921,53 @@ class TestFindRecipeFile(unittest.TestCase):
             tasktree_path.write_text("tasks:\n  build:\n    cmd: echo from tasktree")
             tt_path.write_text("tasks:\n  build:\n    cmd: echo from tt")
 
+            # Should raise ValueError with helpful message
+            with self.assertRaises(ValueError) as cm:
+                find_recipe_file(project_root)
+
+            error_msg = str(cm.exception)
+            self.assertIn("Multiple recipe files found", error_msg)
+            self.assertIn("tasktree.yaml", error_msg)
+            self.assertIn("tt.yaml", error_msg)
+            self.assertIn("--tasks", error_msg)
+
+    def test_find_recipe_file_yml_extension(self):
+        """Test finds tasktree.yml (with .yml extension)."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            recipe_path = project_root / "tasktree.yml"
+            recipe_path.write_text("tasks:\n  build:\n    cmd: echo test")
+
             result = find_recipe_file(project_root)
-            self.assertEqual(result, tasktree_path)
+            self.assertEqual(result, recipe_path)
+
+    def test_find_recipe_file_tasks_extension(self):
+        """Test finds *.tasks files."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            recipe_path = project_root / "build.tasks"
+            recipe_path.write_text("tasks:\n  build:\n    cmd: echo test")
+
+            result = find_recipe_file(project_root)
+            self.assertEqual(result, recipe_path)
+
+    def test_find_recipe_file_multiple_tasks_files_raises_error(self):
+        """Test raises error when multiple *.tasks files found."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            build_tasks = project_root / "build.tasks"
+            test_tasks = project_root / "test.tasks"
+
+            build_tasks.write_text("tasks:\n  build:\n    cmd: echo build")
+            test_tasks.write_text("tasks:\n  test:\n    cmd: echo test")
+
+            # Should raise ValueError
+            with self.assertRaises(ValueError) as cm:
+                find_recipe_file(project_root)
+
+            error_msg = str(cm.exception)
+            self.assertIn("Multiple recipe files found", error_msg)
+            self.assertIn("--tasks", error_msg)
 
 
 class TestEnvironmentParsing(unittest.TestCase):
