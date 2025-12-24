@@ -89,7 +89,7 @@ def _show_task(task_name: str):
 
 
 def _show_tree(task_name: str):
-    """Show dependency tree with freshness indicators."""
+    """Show dependency tree structure."""
     recipe = _get_recipe()
     if recipe is None:
         console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
@@ -107,14 +107,8 @@ def _show_tree(task_name: str):
         console.print(f"[red]Error building dependency tree: {e}[/red]")
         raise typer.Exit(1)
 
-    # Get execution statuses
-    state = StateManager(recipe.project_root)
-    state.load()
-    executor = Executor(recipe, state)
-    statuses = executor.execute_task(task_name, dry_run=True)
-
     # Build Rich tree
-    tree = _build_rich_tree(dep_tree, statuses)
+    tree = _build_rich_tree(dep_tree)
     console.print(tree)
 
 
@@ -408,40 +402,21 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
     return args_dict
 
 
-def _build_rich_tree(dep_tree: dict, statuses: dict) -> Tree:
-    """Build a Rich Tree from dependency tree and statuses.
+def _build_rich_tree(dep_tree: dict) -> Tree:
+    """Build a Rich Tree from dependency tree structure.
 
     Args:
         dep_tree: Dependency tree structure
-        statuses: Task execution statuses
 
     Returns:
         Rich Tree for display
     """
     task_name = dep_tree["name"]
-    status = statuses.get(task_name)
-
-    # Determine color based on status
-    if status:
-        if status.will_run:
-            if status.reason == "dependency_triggered":
-                color = "yellow"
-                label = f"{task_name} (triggered by dependency)"
-            else:
-                color = "red"
-                label = f"{task_name} (stale: {status.reason})"
-        else:
-            color = "green"
-            label = f"{task_name} (fresh)"
-    else:
-        color = "white"
-        label = task_name
-
-    tree = Tree(f"[{color}]{label}[/{color}]")
+    tree = Tree(task_name)
 
     # Add dependencies
     for dep in dep_tree.get("deps", []):
-        dep_tree_obj = _build_rich_tree(dep, statuses)
+        dep_tree_obj = _build_rich_tree(dep)
         tree.add(dep_tree_obj)
 
     return tree

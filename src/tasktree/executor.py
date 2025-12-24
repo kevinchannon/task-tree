@@ -146,7 +146,6 @@ class Executor:
         self,
         task_name: str,
         args_dict: dict[str, Any] | None = None,
-        dry_run: bool = False,
         force: bool = False,
     ) -> dict[str, TaskStatus]:
         """Execute a task and its dependencies.
@@ -154,7 +153,6 @@ class Executor:
         Args:
             task_name: Name of task to execute
             args_dict: Arguments to pass to the task
-            dry_run: If True, only check what would run without executing
             force: If True, ignore freshness and re-run all tasks
 
         Returns:
@@ -182,9 +180,6 @@ class Executor:
 
             status = self.check_task_status(task, task_args, dep_statuses, force=force)
             statuses[name] = status
-
-        if dry_run:
-            return statuses
 
         # Execute tasks that need to run
         for name in execution_order:
