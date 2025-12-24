@@ -58,11 +58,12 @@ tt --list         # Show all available tasks
 
 Task Tree only runs tasks when necessary. A task executes if:
 
-- Its definition (command, outputs, working directory) has changed
+- Its definition (command, outputs, working directory, environment) has changed
 - Any input files have changed since the last run
 - Any dependencies have re-run
 - It has never been executed before
 - It has no inputs or outputs (always runs)
+- The execution environment has changed (CLI override or environment config change)
 
 ### Automatic Input Inheritance
 
@@ -91,17 +92,25 @@ All state lives in `.tasktree-state` at your project root. Stale entries are aut
 ```yaml
 task-name:
   desc: Human-readable description (optional)
-  deps: [other-task]              # Task dependencies
-  inputs: [src/**/*.go]            # Explicit input files (glob patterns)
-  outputs: [dist/binary]           # Output files (glob patterns)
-  working_dir: subproject/         # Execution directory (default: project root)
-  args: [param1, param2:path=default]   # Task parameters
-  cmd: go build -o dist/binary     # Command to execute
+  deps: [other-task]                     # Task dependencies
+  inputs: [src/**/*.go]                  # Explicit input files (glob patterns)
+  outputs: [dist/binary]                 # Output files (glob patterns)
+  working_dir: subproject/               # Execution directory (default: project root)
+  env: bash-strict                       # Execution environment (optional)
+  args: [param1, param2:path=default]    # Task parameters
+  cmd: go build -o dist/binary           # Command to execute
 ```
 
 ### Commands
 
-Multi-line commands using YAML literal blocks:
+**Single-line commands** are executed directly via the configured shell:
+
+```yaml
+build:
+  cmd: cargo build --release
+```
+
+**Multi-line commands** are written to temporary script files for proper execution:
 
 ```yaml
 deploy:
@@ -111,7 +120,9 @@ deploy:
     rsync -av dist/ server:/opt/app/
 ```
 
-Or folded blocks for long single-line commands:
+Multi-line commands preserve shell syntax (line continuations, heredocs, etc.) and support shebangs on Unix/macOS.
+
+Or use folded blocks for long single-line commands:
 
 ```yaml
 compile:
@@ -121,6 +132,58 @@ compile:
     -I include
     -L lib -lm
 ```
+
+### Execution Environments
+
+Configure custom shell environments for task execution:
+
+```yaml
+environments:
+  default: bash-strict
+
+  bash-strict:
+    shell: bash
+    args: ['-c']              # For single-line: bash -c "command"
+    preamble: |               # For multi-line: prepended to script
+      set -euo pipefail
+
+  python:
+    shell: python
+    args: ['-c']
+
+  powershell:
+    shell: powershell
+    args: ['-ExecutionPolicy', 'Bypass', '-Command']
+    preamble: |
+      $ErrorActionPreference = 'Stop'
+
+tasks:
+  build:
+    # Uses 'default' environment (bash-strict)
+    cmd: cargo build --release
+
+  analyze:
+    env: python
+    cmd: |
+      import sys
+      print(f"Analyzing with Python {sys.version}")
+      # ... analysis code ...
+
+  windows-task:
+    env: powershell
+    cmd: |
+      Compress-Archive -Path dist/* -DestinationPath package.zip
+```
+
+**Environment resolution priority:**
+1. CLI override: `tt --env python build`
+2. Task's `env` field
+3. Recipe's `default` environment
+4. Platform default (bash on Unix, cmd on Windows)
+
+**Platform defaults** when no environments are configured:
+- **Unix/macOS**: bash with `-c` args
+- **Windows**: cmd with `/c` args
 
 ### Parameterised Tasks
 
@@ -188,12 +251,19 @@ Input and output patterns support standard glob syntax:
 
 ### How State Works
 
-Each task is identified by a hash of its definition (command, outputs, working directory). State tracks:
+Each task is identified by a hash of its definition. The hash includes:
 
+- Command to execute
+- Output patterns
+- Working directory
+- Argument definitions
+- Execution environment
+
+State tracks:
 - When the task last ran
 - Timestamps of input files at that time
 
-Tasks are re-run when their definition changes or inputs are newer than the last run.
+Tasks are re-run when their definition changes, inputs are newer than the last run, or the environment changes.
 
 ### What's Not In The Hash
 
@@ -207,6 +277,72 @@ Changes to these don't invalidate cached state:
 ### Automatic Cleanup
 
 At the start of each invocation, state is checked for invalid task hashes and non-existent ones are automatically removed. Delete a task from your recipe file and its state disappears the next time you run `tt <cmd>`
+
+## Command-Line Options
+
+Task Tree provides several command-line options for controlling task execution:
+
+### Execution Control
+
+```bash
+# Force re-run (ignore freshness checks)
+tt --force build
+tt -f build
+
+# Run only the specified task, skip dependencies (implies --force)
+tt --only deploy
+tt -o deploy
+
+# Override environment for all tasks
+tt --env python analyze
+tt -e powershell build
+```
+
+### Information Commands
+
+```bash
+# List all available tasks
+tt --list
+tt -l
+
+# Show detailed task definition
+tt --show build
+
+# Show dependency tree (without execution)
+tt --tree deploy
+
+# Show version
+tt --version
+tt -v
+
+# Create a blank recipe file
+tt --init
+```
+
+### State Management
+
+```bash
+# Remove state file (reset task cache)
+tt --clean
+tt --clean-state
+tt --reset
+```
+
+### Common Workflows
+
+```bash
+# Fresh build of everything
+tt --force build
+
+# Run a task without rebuilding dependencies
+tt --only test
+
+# Test with a different shell/environment
+tt --env python test
+
+# Force rebuild and deploy
+tt --force deploy production
+```
 
 ## Example: Full Build Pipeline
 
