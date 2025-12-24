@@ -880,5 +880,95 @@ class TestFindRecipeFile(unittest.TestCase):
             self.assertEqual(result, tasktree_path)
 
 
+class TestEnvironmentParsing(unittest.TestCase):
+    """Test parsing of environments section."""
+
+    def test_parse_environments_section(self):
+        """Test parsing environments from YAML."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            recipe_path = project_root / "tasktree.yaml"
+
+            recipe_path.write_text("""
+environments:
+  default: bash-strict
+  bash-strict:
+    shell: bash
+    args: ['-c']
+    preamble: |
+      set -euo pipefail
+
+  python:
+    shell: python
+    args: ['-c']
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+
+            # Check environments were parsed
+            self.assertEqual(len(recipe.environments), 2)
+            self.assertIn("bash-strict", recipe.environments)
+            self.assertIn("python", recipe.environments)
+
+            # Check default environment
+            self.assertEqual(recipe.default_env, "bash-strict")
+
+            # Check bash-strict environment
+            bash_env = recipe.environments["bash-strict"]
+            self.assertEqual(bash_env.name, "bash-strict")
+            self.assertEqual(bash_env.shell, "bash")
+            self.assertEqual(bash_env.args, ["-c"])
+            self.assertIn("set -euo pipefail", bash_env.preamble)
+
+            # Check python environment
+            py_env = recipe.environments["python"]
+            self.assertEqual(py_env.name, "python")
+            self.assertEqual(py_env.shell, "python")
+            self.assertEqual(py_env.args, ["-c"])
+
+    def test_parse_recipe_without_environments(self):
+        """Test parsing recipe without environments section."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            recipe_path = project_root / "tasktree.yaml"
+
+            recipe_path.write_text("""
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+
+            # Should have no environments
+            self.assertEqual(len(recipe.environments), 0)
+            self.assertEqual(recipe.default_env, "")
+
+    def test_environment_missing_shell(self):
+        """Test error when environment doesn't specify shell."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            recipe_path = project_root / "tasktree.yaml"
+
+            recipe_path.write_text("""
+environments:
+  bad-env:
+    args: ['-c']
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            with self.assertRaises(ValueError) as cm:
+                parse_recipe(recipe_path)
+
+            self.assertIn("must specify 'shell'", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

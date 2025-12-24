@@ -683,5 +683,88 @@ class TestOnlyMode(unittest.TestCase):
             self.assertEqual(statuses["build"].reason, "forced")
 
 
+class TestMultilineExecution(unittest.TestCase):
+    """Test multi-line command execution via temp files."""
+
+    @patch("subprocess.run")
+    def test_single_line_command_uses_shell(self, mock_run):
+        """Test single-line commands execute via shell."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+            tasks = {"build": Task(name="build", cmd="echo hello")}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+
+            executor.execute_task("build")
+
+            # Verify shell=True was used for single-line command
+            self.assertEqual(mock_run.call_count, 1)
+            call_kwargs = mock_run.call_args[1]
+            self.assertTrue(call_kwargs.get("shell"))
+
+    @patch("subprocess.run")
+    def test_multiline_command_uses_temp_file(self, mock_run):
+        """Test multi-line commands execute via temporary script file."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+
+            multiline_cmd = """echo line1
+echo line2
+echo line3"""
+
+            tasks = {"build": Task(name="build", cmd=multiline_cmd)}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+
+            executor.execute_task("build")
+
+            # Verify subprocess was called with script path (not shell=True)
+            self.assertEqual(mock_run.call_count, 1)
+            call_args = mock_run.call_args[0]
+            call_kwargs = mock_run.call_args[1]
+
+            # Should be called with list [script_path], not string
+            self.assertIsInstance(call_args[0], list)
+            self.assertFalse(call_kwargs.get("shell", False))
+
+    def test_multiline_command_content(self):
+        """Test multi-line command content is written to temp file."""
+        import platform
+
+        # Skip on Windows (different shell syntax)
+        if platform.system() == "Windows":
+            self.skipTest("Skipping on Windows - different shell syntax")
+
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+
+            # Use relative path for output
+            multiline_cmd = """echo "line1" > output.txt
+echo "line2" >> output.txt
+echo "line3" >> output.txt"""
+
+            tasks = {"build": Task(name="build", cmd=multiline_cmd)}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            # Let the command actually run (no mocking)
+            executor.execute_task("build")
+
+            # Verify output file was created with all three lines
+            output_file = project_root / "output.txt"
+            self.assertTrue(output_file.exists())
+            content = output_file.read_text()
+            self.assertIn("line1", content)
+            self.assertIn("line2", content)
+            self.assertIn("line3", content)
+
+
 if __name__ == "__main__":
     unittest.main()

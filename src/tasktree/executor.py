@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import platform
+import stat
 import subprocess
+import tempfile
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -228,8 +232,31 @@ class Executor:
 
         # Execute command
         print(f"Running: {task.name}")
+
+        # Detect multi-line commands
+        if "\n" in cmd:
+            self._run_multiline_command(cmd, working_dir, task.name)
+        else:
+            self._run_single_line_command(cmd, working_dir, task.name)
+
+        # Update state
+        self._update_state(task, args_dict)
+
+    def _run_single_line_command(
+        self, cmd: str, working_dir: Path, task_name: str
+    ) -> None:
+        """Execute a single-line command via shell.
+
+        Args:
+            cmd: Command string
+            working_dir: Working directory
+            task_name: Task name (for error messages)
+
+        Raises:
+            ExecutionError: If command execution fails
+        """
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 shell=True,
                 cwd=working_dir,
@@ -237,10 +264,66 @@ class Executor:
                 capture_output=False,
             )
         except subprocess.CalledProcessError as e:
-            raise ExecutionError(f"Task '{task.name}' failed with exit code {e.returncode}")
+            raise ExecutionError(
+                f"Task '{task_name}' failed with exit code {e.returncode}"
+            )
 
-        # Update state
-        self._update_state(task, args_dict)
+    def _run_multiline_command(
+        self, cmd: str, working_dir: Path, task_name: str
+    ) -> None:
+        """Execute a multi-line command via temporary script file.
+
+        Args:
+            cmd: Multi-line command string
+            working_dir: Working directory
+            task_name: Task name (for error messages)
+
+        Raises:
+            ExecutionError: If command execution fails
+        """
+        # Determine file extension and shell based on platform
+        is_windows = platform.system() == "Windows"
+        script_ext = ".bat" if is_windows else ".sh"
+
+        # Create temporary script file
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=script_ext,
+            delete=False,
+        ) as script_file:
+            script_path = script_file.name
+
+            # On Unix/macOS, add shebang if not present
+            if not is_windows and not cmd.startswith("#!"):
+                script_file.write("#!/bin/bash\n")
+
+            # Write command to file
+            script_file.write(cmd)
+            script_file.flush()
+
+        try:
+            # Make executable on Unix/macOS
+            if not is_windows:
+                os.chmod(script_path, os.stat(script_path).st_mode | stat.S_IEXEC)
+
+            # Execute script file
+            try:
+                subprocess.run(
+                    [script_path],
+                    cwd=working_dir,
+                    check=True,
+                    capture_output=False,
+                )
+            except subprocess.CalledProcessError as e:
+                raise ExecutionError(
+                    f"Task '{task_name}' failed with exit code {e.returncode}"
+                )
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(script_path)
+            except OSError:
+                pass  # Ignore cleanup errors
 
     def _substitute_args(self, cmd: str, args_dict: dict[str, Any]) -> str:
         """Substitute arguments in command string.

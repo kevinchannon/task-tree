@@ -15,6 +15,21 @@ class CircularImportError(Exception):
 
 
 @dataclass
+class Environment:
+    """Represents an execution environment configuration."""
+
+    name: str
+    shell: str
+    args: list[str] = field(default_factory=list)
+    preamble: str = ""
+
+    def __post_init__(self):
+        """Ensure args is always a list."""
+        if isinstance(self.args, str):
+            self.args = [self.args]
+
+
+@dataclass
 class Task:
     """Represents a task definition."""
 
@@ -27,6 +42,7 @@ class Task:
     working_dir: str = ""
     args: list[str] = field(default_factory=list)
     source_file: str = ""  # Track which file defined this task
+    env: str = ""  # Environment name to use for execution
 
     def __post_init__(self):
         """Ensure lists are always lists."""
@@ -46,6 +62,8 @@ class Recipe:
 
     tasks: dict[str, Task]
     project_root: Path
+    environments: dict[str, Environment] = field(default_factory=dict)
+    default_env: str = ""  # Name of default environment
 
     def get_task(self, name: str) -> Task | None:
         """Get task by name.
@@ -61,6 +79,17 @@ class Recipe:
     def task_names(self) -> list[str]:
         """Get all task names."""
         return list(self.tasks.keys())
+
+    def get_environment(self, name: str) -> Environment | None:
+        """Get environment by name.
+
+        Args:
+            name: Environment name
+
+        Returns:
+            Environment if found, None otherwise
+        """
+        return self.environments.get(name)
 
 
 def find_recipe_file(start_dir: Path | None = None) -> Path | None:
@@ -94,6 +123,68 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
     return None
 
 
+def _parse_file_with_env(
+    file_path: Path,
+    namespace: str | None,
+    project_root: Path,
+    import_stack: list[Path] | None = None,
+) -> tuple[dict[str, Task], dict[str, Environment], str]:
+    """Parse file and extract tasks and environments.
+
+    Args:
+        file_path: Path to YAML file
+        namespace: Optional namespace prefix for tasks
+        project_root: Root directory of the project
+        import_stack: Stack of files being imported (for circular detection)
+
+    Returns:
+        Tuple of (tasks, environments, default_env_name)
+    """
+    # Parse tasks normally
+    tasks = _parse_file(file_path, namespace, project_root, import_stack)
+
+    # Load YAML again to extract environments (only from root file)
+    environments: dict[str, Environment] = {}
+    default_env = ""
+
+    # Only parse environments from the root file (namespace is None)
+    if namespace is None:
+        with open(file_path, "r") as f:
+            data = yaml.safe_load(f)
+
+        if data and "environments" in data:
+            env_data = data["environments"]
+            if isinstance(env_data, dict):
+                # Extract default environment name
+                default_env = env_data.get("default", "")
+
+                # Parse each environment definition
+                for env_name, env_config in env_data.items():
+                    if env_name == "default":
+                        continue  # Skip the default key itself
+
+                    if not isinstance(env_config, dict):
+                        raise ValueError(
+                            f"Environment '{env_name}' must be a dictionary"
+                        )
+
+                    # Parse environment configuration
+                    shell = env_config.get("shell", "")
+                    if not shell:
+                        raise ValueError(
+                            f"Environment '{env_name}' must specify 'shell'"
+                        )
+
+                    args = env_config.get("args", [])
+                    preamble = env_config.get("preamble", "")
+
+                    environments[env_name] = Environment(
+                        name=env_name, shell=shell, args=args, preamble=preamble
+                    )
+
+    return tasks, environments, default_env
+
+
 def parse_recipe(recipe_path: Path) -> Recipe:
     """Parse a recipe file and handle imports recursively.
 
@@ -115,9 +206,16 @@ def parse_recipe(recipe_path: Path) -> Recipe:
     project_root = recipe_path.parent
 
     # Parse main file - it will recursively handle all imports
-    tasks = _parse_file(recipe_path, namespace=None, project_root=project_root)
+    tasks, environments, default_env = _parse_file_with_env(
+        recipe_path, namespace=None, project_root=project_root
+    )
 
-    return Recipe(tasks=tasks, project_root=project_root)
+    return Recipe(
+        tasks=tasks,
+        project_root=project_root,
+        environments=environments,
+        default_env=default_env,
+    )
 
 
 def _parse_file(
@@ -198,10 +296,14 @@ def _parse_file(
 
             tasks.update(nested_tasks)
 
+    # Determine where tasks are defined
+    # Tasks can be either at root level OR inside a "tasks:" key
+    tasks_data = data.get("tasks", data) if "tasks" in data else data
+
     # Process local tasks
-    for task_name, task_data in data.items():
-        # Skip import declarations
-        if task_name == "import":
+    for task_name, task_data in tasks_data.items():
+        # Skip special sections (only relevant if tasks are at root level)
+        if task_name in ("import", "environments", "tasks"):
             continue
 
         if not isinstance(task_data, dict):
