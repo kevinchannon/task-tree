@@ -10,6 +10,7 @@ dependencies = [
     "click>=8.1.0",
     "rich>=13.0.0",
     "colorama>=0.4.6",
+    "pathspec>=0.11.0",
 ]
 
 [project.optional-dependencies]

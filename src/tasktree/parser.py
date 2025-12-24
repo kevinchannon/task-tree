@@ -16,12 +16,24 @@ class CircularImportError(Exception):
 
 @dataclass
 class Environment:
-    """Represents an execution environment configuration."""
+    """Represents an execution environment configuration.
+
+    Can be either a shell environment or a Docker environment:
+    - Shell environment: has 'shell' field, executes directly on host
+    - Docker environment: has 'dockerfile' field, executes in container
+    """
 
     name: str
-    shell: str
+    shell: str = ""  # Path to shell (required for shell envs, optional for Docker)
     args: list[str] = field(default_factory=list)
     preamble: str = ""
+    # Docker-specific fields (presence of dockerfile indicates Docker environment)
+    dockerfile: str = ""  # Path to Dockerfile
+    context: str = ""  # Path to build context directory
+    volumes: list[str] = field(default_factory=list)  # Volume mounts
+    ports: list[str] = field(default_factory=list)  # Port mappings
+    env_vars: dict[str, str] = field(default_factory=dict)  # Environment variables
+    working_dir: str = ""  # Working directory (container or host)
 
     def __post_init__(self):
         """Ensure args is always a list."""
@@ -201,18 +213,71 @@ def _parse_file_with_env(
                             f"Environment '{env_name}' must be a dictionary"
                         )
 
-                    # Parse environment configuration
+                    # Parse common environment configuration
                     shell = env_config.get("shell", "")
-                    if not shell:
-                        raise ValueError(
-                            f"Environment '{env_name}' must specify 'shell'"
-                        )
-
                     args = env_config.get("args", [])
                     preamble = env_config.get("preamble", "")
+                    working_dir = env_config.get("working_dir", "")
+
+                    # Parse Docker-specific fields
+                    dockerfile = env_config.get("dockerfile", "")
+                    context = env_config.get("context", "")
+                    volumes = env_config.get("volumes", [])
+                    ports = env_config.get("ports", [])
+                    env_vars = env_config.get("env_vars", {})
+
+                    # Validate environment type
+                    if not shell and not dockerfile:
+                        raise ValueError(
+                            f"Environment '{env_name}' must specify either 'shell' "
+                            f"(for shell environments) or 'dockerfile' (for Docker environments)"
+                        )
+
+                    # Validate Docker environment requirements
+                    if dockerfile and not context:
+                        raise ValueError(
+                            f"Docker environment '{env_name}' must specify 'context' "
+                            f"when 'dockerfile' is specified"
+                        )
+
+                    # Validate that Dockerfile exists if specified
+                    if dockerfile:
+                        dockerfile_path = project_root / dockerfile
+                        if not dockerfile_path.exists():
+                            raise ValueError(
+                                f"Environment '{env_name}': Dockerfile not found at {dockerfile_path}"
+                            )
+
+                    # Validate that context directory exists if specified
+                    if context:
+                        context_path = project_root / context
+                        if not context_path.exists():
+                            raise ValueError(
+                                f"Environment '{env_name}': context directory not found at {context_path}"
+                            )
+                        if not context_path.is_dir():
+                            raise ValueError(
+                                f"Environment '{env_name}': context must be a directory, got {context_path}"
+                            )
+
+                    # Validate environment name (must be valid Docker tag)
+                    if not env_name.replace("-", "").replace("_", "").isalnum():
+                        raise ValueError(
+                            f"Environment name '{env_name}' must be alphanumeric "
+                            f"(with optional hyphens and underscores)"
+                        )
 
                     environments[env_name] = Environment(
-                        name=env_name, shell=shell, args=args, preamble=preamble
+                        name=env_name,
+                        shell=shell,
+                        args=args,
+                        preamble=preamble,
+                        dockerfile=dockerfile,
+                        context=context,
+                        volumes=volumes,
+                        ports=ports,
+                        env_vars=env_vars,
+                        working_dir=working_dir,
                     )
 
     return tasks, environments, default_env
@@ -425,6 +490,7 @@ def _parse_file(
             working_dir=working_dir,
             args=task_data.get("args", []),
             source_file=str(file_path),
+            env=task_data.get("env", ""),
         )
 
         tasks[full_name] = task

@@ -40,7 +40,7 @@
           "properties": {
             "shell": {
               "type": "string",
-              "description": "Path to the shell executable (e.g., /bin/bash, python3, pwsh)"
+              "description": "Path to the shell executable (e.g., /bin/bash, python3, pwsh). Required for shell environments, optional for Docker environments (defaults to 'sh' inside container)."
             },
             "args": {
               "description": "Arguments to pass to the shell",
@@ -59,9 +59,41 @@
             "preamble": {
               "type": "string",
               "description": "Code to execute before the command (e.g., imports, setup)"
+            },
+            "dockerfile": {
+              "type": "string",
+              "description": "Path to Dockerfile (relative to recipe file). When present, indicates a Docker environment."
+            },
+            "context": {
+              "type": "string",
+              "description": "Path to Docker build context directory (relative to recipe file). Required if dockerfile is specified."
+            },
+            "volumes": {
+              "description": "Volume mounts for Docker container (format: 'host_path:container_path')",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "ports": {
+              "description": "Port mappings for Docker container (format: 'host_port:container_port')",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "env_vars": {
+              "description": "Environment variables to set inside the Docker container",
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "working_dir": {
+              "type": "string",
+              "description": "Working directory inside the container (for Docker environments) or on the host (for shell environments)"
             }
           },
-          "required": ["shell"],
           "additionalProperties": false
         }
       },

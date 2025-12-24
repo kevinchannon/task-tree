@@ -13,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from tasktree import docker as docker_module
 from tasktree.graph import get_implicit_inputs, resolve_execution_order
 from tasktree.hasher import hash_args, hash_task, make_cache_key
 from tasktree.parser import Recipe, Task
@@ -49,6 +50,7 @@ class Executor:
         """
         self.recipe = recipe
         self.state = state_manager
+        self.docker_manager = docker_module.DockerManager(recipe.project_root)
 
     def _get_platform_default_environment(self) -> tuple[str, list[str]]:
         """Get default shell and args for current platform.
@@ -310,17 +312,28 @@ class Executor:
         # Determine working directory
         working_dir = self.recipe.project_root / task.working_dir
 
-        # Resolve environment for this task
-        shell, shell_args, preamble = self._resolve_environment(task)
+        # Check if task uses Docker environment
+        env_name = self._get_effective_env_name(task)
+        env = None
+        if env_name:
+            env = self.recipe.get_environment(env_name)
 
         # Execute command
         print(f"Running: {task.name}")
 
-        # Detect multi-line commands (ignore trailing newlines from YAML folded blocks)
-        if "\n" in cmd.rstrip():
-            self._run_multiline_command(cmd, working_dir, task.name, shell, preamble)
+        # Route to Docker execution or regular execution
+        if env and env.dockerfile:
+            # Docker execution path
+            self._run_task_in_docker(task, env, cmd, working_dir)
         else:
-            self._run_single_line_command(cmd, working_dir, task.name, shell, shell_args)
+            # Regular execution path
+            shell, shell_args, preamble = self._resolve_environment(task)
+
+            # Detect multi-line commands (ignore trailing newlines from YAML folded blocks)
+            if "\n" in cmd.rstrip():
+                self._run_multiline_command(cmd, working_dir, task.name, shell, preamble)
+            else:
+                self._run_single_line_command(cmd, working_dir, task.name, shell, shell_args)
 
         # Update state
         self._update_state(task, args_dict)
@@ -421,6 +434,53 @@ class Executor:
             except OSError:
                 pass  # Ignore cleanup errors
 
+    def _run_task_in_docker(
+        self, task: Task, env: Any, cmd: str, working_dir: Path
+    ) -> None:
+        """Execute task inside Docker container.
+
+        Args:
+            task: Task to execute
+            env: Docker environment configuration
+            cmd: Command to execute
+            working_dir: Host working directory
+
+        Raises:
+            ExecutionError: If Docker execution fails
+        """
+        # Resolve container working directory
+        container_working_dir = docker_module.resolve_container_working_dir(
+            env.working_dir, task.working_dir
+        )
+
+        # Check for unpinned base images and warn
+        dockerfile_path = self.recipe.project_root / env.dockerfile
+        if dockerfile_path.exists():
+            try:
+                dockerfile_content = dockerfile_path.read_text()
+                unpinned = docker_module.check_unpinned_images(dockerfile_content)
+                if unpinned:
+                    print(f"\nWarning: {env.dockerfile} uses unpinned base image(s):")
+                    for image in unpinned:
+                        print(f"  - {image}")
+                    print("\nTask Tree cannot detect if these base images have been updated on the registry.")
+                    print("For reproducible builds, pin to digests:")
+                    print(f"  FROM {unpinned[0]}@sha256:...")
+                    print(f"\nAlternatively, run 'tt --force {task.name}' to force rebuild with latest images.\n")
+            except (OSError, IOError):
+                pass  # If we can't read Dockerfile, skip warning
+
+        # Execute in container
+        try:
+            self.docker_manager.run_in_container(
+                env=env,
+                cmd=cmd,
+                working_dir=working_dir,
+                container_working_dir=container_working_dir,
+            )
+        except docker_module.DockerError as e:
+            raise ExecutionError(str(e)) from e
+
     def _substitute_args(self, cmd: str, args_dict: dict[str, Any]) -> str:
         """Substitute arguments in command string.
 
@@ -456,6 +516,11 @@ class Executor:
     ) -> list[str]:
         """Check if any input files have changed since last run.
 
+        Handles both regular file inputs and Docker-specific inputs:
+        - Regular files: checked via mtime
+        - Docker context: checked via directory walk with early exit
+        - Dockerfile digests: checked via parsing and comparison
+
         Args:
             task: Task to check
             cached_state: Cached state from previous run
@@ -469,7 +534,66 @@ class Executor:
         # Expand glob patterns
         input_files = self._expand_globs(all_inputs, task.working_dir)
 
+        # Check if task uses Docker environment
+        env_name = self._get_effective_env_name(task)
+        docker_env = None
+        if env_name:
+            docker_env = self.recipe.get_environment(env_name)
+            if docker_env and not docker_env.dockerfile:
+                docker_env = None  # Not a Docker environment
+
         for file_path in input_files:
+            # Handle Docker context directory check
+            if file_path.startswith("_docker_context_"):
+                if docker_env:
+                    context_name = file_path.replace("_docker_context_", "")
+                    context_path = self.recipe.project_root / context_name
+                    dockerignore_path = context_path / ".dockerignore"
+
+                    # Get last context check time
+                    cached_context_time = cached_state.input_state.get(
+                        f"_context_{context_name}"
+                    )
+                    if cached_context_time is None:
+                        # Never checked before - consider changed
+                        changed_files.append(f"Docker context: {context_name}")
+                        continue
+
+                    # Check if context changed (with early exit optimization)
+                    if docker_module.context_changed_since(
+                        context_path, dockerignore_path, cached_context_time
+                    ):
+                        changed_files.append(f"Docker context: {context_name}")
+                continue
+
+            # Handle Docker Dockerfile digest check
+            if file_path.startswith("_docker_dockerfile_"):
+                if docker_env:
+                    dockerfile_name = file_path.replace("_docker_dockerfile_", "")
+                    dockerfile_path = self.recipe.project_root / dockerfile_name
+
+                    try:
+                        dockerfile_content = dockerfile_path.read_text()
+                        current_digests = set(
+                            docker_module.parse_base_image_digests(dockerfile_content)
+                        )
+
+                        # Get cached digests
+                        cached_digests = set()
+                        for key in cached_state.input_state:
+                            if key.startswith("_digest_"):
+                                digest = key.replace("_digest_", "")
+                                cached_digests.add(digest)
+
+                        # Check if digests changed
+                        if current_digests != cached_digests:
+                            changed_files.append(f"Docker base image digests in {dockerfile_name}")
+                    except (OSError, IOError):
+                        # Can't read Dockerfile - consider changed
+                        changed_files.append(f"Dockerfile: {dockerfile_name}")
+                continue
+
+            # Regular file check
             file_path_obj = self.recipe.project_root / task.working_dir / file_path
             if not file_path_obj.exists():
                 continue
@@ -549,9 +673,46 @@ class Executor:
 
         input_state = {}
         for file_path in input_files:
+            # Skip Docker special markers (handled separately below)
+            if file_path.startswith("_docker_"):
+                continue
+
             file_path_obj = self.recipe.project_root / task.working_dir / file_path
             if file_path_obj.exists():
                 input_state[file_path] = file_path_obj.stat().st_mtime
+
+        # Record Docker-specific inputs if task uses Docker environment
+        env_name = self._get_effective_env_name(task)
+        if env_name:
+            env = self.recipe.get_environment(env_name)
+            if env and env.dockerfile:
+                # Record Dockerfile mtime
+                dockerfile_path = self.recipe.project_root / env.dockerfile
+                if dockerfile_path.exists():
+                    input_state[env.dockerfile] = dockerfile_path.stat().st_mtime
+
+                # Record .dockerignore mtime if exists
+                context_path = self.recipe.project_root / env.context
+                dockerignore_path = context_path / ".dockerignore"
+                if dockerignore_path.exists():
+                    relative_dockerignore = str(
+                        dockerignore_path.relative_to(self.recipe.project_root)
+                    )
+                    input_state[relative_dockerignore] = dockerignore_path.stat().st_mtime
+
+                # Record context check timestamp
+                input_state[f"_context_{env.context}"] = time.time()
+
+                # Parse and record base image digests from Dockerfile
+                try:
+                    dockerfile_content = dockerfile_path.read_text()
+                    digests = docker_module.parse_base_image_digests(dockerfile_content)
+                    for digest in digests:
+                        # Store digest with Dockerfile's mtime
+                        input_state[f"_digest_{digest}"] = dockerfile_path.stat().st_mtime
+                except (OSError, IOError):
+                    # If we can't read Dockerfile, skip digest tracking
+                    pass
 
         # Create new state
         state = TaskState(

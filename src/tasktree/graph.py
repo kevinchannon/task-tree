@@ -1,6 +1,7 @@
 """Dependency resolution using topological sorting."""
 
 from graphlib import TopologicalSorter
+from pathlib import Path
 
 from tasktree.parser import Recipe, Task
 
@@ -71,16 +72,21 @@ def get_implicit_inputs(recipe: Recipe, task: Task) -> list[str]:
     Tasks automatically inherit inputs from dependencies:
     1. All outputs from dependency tasks become implicit inputs
     2. All inputs from dependency tasks that don't declare outputs are inherited
+    3. If task uses a Docker environment, Docker artifacts become implicit inputs:
+       - Dockerfile
+       - .dockerignore (if present)
+       - Special markers for context directory and base image digests
 
     Args:
         recipe: Parsed recipe containing all tasks
         task: Task to get implicit inputs for
 
     Returns:
-        List of glob patterns for implicit inputs
+        List of glob patterns for implicit inputs, including Docker-specific markers
     """
     implicit_inputs = []
 
+    # Inherit from dependencies
     for dep_name in task.deps:
         dep_task = recipe.tasks.get(dep_name)
         if dep_task is None:
@@ -92,6 +98,29 @@ def get_implicit_inputs(recipe: Recipe, task: Task) -> list[str]:
         # If dependency has no outputs, inherit its inputs
         elif dep_task.inputs:
             implicit_inputs.extend(dep_task.inputs)
+
+    # Add Docker-specific implicit inputs if task uses Docker environment
+    env_name = task.env or recipe.default_env
+    if env_name:
+        env = recipe.get_environment(env_name)
+        if env and env.dockerfile:
+            # Add Dockerfile as input
+            implicit_inputs.append(env.dockerfile)
+
+            # Add .dockerignore if it exists in context directory
+            context_path = recipe.project_root / env.context
+            dockerignore_path = context_path / ".dockerignore"
+            if dockerignore_path.exists():
+                relative_dockerignore = str(
+                    dockerignore_path.relative_to(recipe.project_root)
+                )
+                implicit_inputs.append(relative_dockerignore)
+
+            # Add special markers for context directory and digest tracking
+            # These are tracked differently in state management (not file paths)
+            # The executor will handle these specially
+            implicit_inputs.append(f"_docker_context_{env.context}")
+            implicit_inputs.append(f"_docker_dockerfile_{env.dockerfile}")
 
     return implicit_inputs
 

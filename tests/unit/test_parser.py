@@ -1057,7 +1057,8 @@ tasks:
             with self.assertRaises(ValueError) as cm:
                 parse_recipe(recipe_path)
 
-            self.assertIn("must specify 'shell'", str(cm.exception))
+            # Updated error message accounts for Docker environments
+            self.assertIn("must specify either 'shell'", str(cm.exception))
 
 
 class TestTasksFieldValidation(unittest.TestCase):
