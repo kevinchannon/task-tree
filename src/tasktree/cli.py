@@ -118,48 +118,6 @@ def _show_tree(task_name: str):
     console.print(tree)
 
 
-def _dry_run(task_name: str):
-    """Show what would be executed without actually running."""
-    recipe = _get_recipe()
-    if recipe is None:
-        console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
-        raise typer.Exit(1)
-
-    task = recipe.get_task(task_name)
-    if task is None:
-        console.print(f"[red]Task not found: {task_name}[/red]")
-        raise typer.Exit(1)
-
-    # Get execution plan
-    state = StateManager(recipe.project_root)
-    state.load()
-    executor = Executor(recipe, state)
-    statuses = executor.execute_task(task_name, dry_run=True)
-
-    # Display plan
-    console.print(f"[bold]Execution plan for '{task_name}':[/bold]\n")
-
-    will_run = [name for name, status in statuses.items() if status.will_run]
-    will_skip = [name for name, status in statuses.items() if not status.will_run]
-
-    if will_run:
-        console.print(f"[yellow]Will execute ({len(will_run)} tasks):[/yellow]")
-        for i, name in enumerate(will_run, 1):
-            status = statuses[name]
-            console.print(f"  {i}. [cyan]{name}[/cyan]")
-            console.print(f"     - {status.reason}")
-            if status.changed_files:
-                console.print(f"     - changed files: {', '.join(status.changed_files)}")
-        console.print()
-
-    if will_skip:
-        console.print(f"[green]Will skip ({len(will_skip)} tasks):[/green]")
-        for name in will_skip:
-            status = statuses[name]
-            last_run_str = f", last run {status.last_run}" if status.last_run else ""
-            console.print(f"  - {name} (fresh{last_run_str})")
-
-
 def _init_recipe():
     """Create a blank recipe file with commented examples."""
     recipe_path = Path("tasktree.yaml")
@@ -221,9 +179,6 @@ def main(
     ),
     show: Optional[str] = typer.Option(None, "--show", help="Show task definition"),
     tree: Optional[str] = typer.Option(None, "--tree", help="Show dependency tree"),
-    dry_run: Optional[str] = typer.Option(
-        None, "--dry-run", help="Show execution plan without running"
-    ),
     init: Optional[bool] = typer.Option(
         None, "--init", help="Create a blank tasktree.yaml"
     ),
@@ -268,11 +223,6 @@ def main(
     # Handle tree option
     if tree:
         _show_tree(tree)
-        raise typer.Exit()
-
-    # Handle dry-run option
-    if dry_run:
-        _dry_run(dry_run)
         raise typer.Exit()
 
     # Handle init option
@@ -377,7 +327,7 @@ def _execute_dynamic_task(args: list[str], force: bool = False) -> None:
     # Execute task
     executor = Executor(recipe, state)
     try:
-        executor.execute_task(task_name, args_dict, dry_run=False, force=force)
+        executor.execute_task(task_name, args_dict, force=force)
         console.print(f"[green]✓ Task '{task_name}' completed successfully[/green]")
     except Exception as e:
         console.print(f"[red]✗ Task '{task_name}' failed: {e}[/red]")

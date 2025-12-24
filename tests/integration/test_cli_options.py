@@ -199,7 +199,6 @@ build:
                 self.assertIn("--list", output)
                 self.assertIn("--show", output)
                 self.assertIn("--tree", output)
-                self.assertIn("--dry-run", output)
                 self.assertIn("--init", output)
                 self.assertIn("--clean", output)
             finally:
