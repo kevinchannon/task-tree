@@ -4,12 +4,111 @@
 
 A task automation tool that combines simple command execution with dependency tracking and incremental execution.
 
+## Motivation
+In any project of even moderate size, various scripts inevitably come into being along the way. These scripts often must be run in a particular order, or at a particular time. For historical reasons, this almost certainly a problem if your project is developed in a Linux environment; in Windows, an IDE like Visual Studio may be taking care of a significant proportion of your build, packaging and deployment tasks. Then again, it may not...
+
+The various incantations that have to be issued to build, package, test and deploy a project can build up and then all of a sudden there's only a few people that remember which to invoke and when and then people start making helpful readme guides on what to do with the scripts and then those become out of date and start telling lies about things and so on.
+
+Then there's the scripts themselves. In Linux, they're probably a big pile of Bash and Python, or something (Ruby, Perl, you name it). You can bet the house on people solving the problem of passing parameters to their scripts in a whole bunch of different and inconsistent ways.
+
+```bash
+#!/usr/bin/env bash
+# It's an environment variable defined.... somewhere?
+echo "FOO is: $FOO"
+```
+```bash
+#!/usr/bin/env bash
+# Using simple positional arguments... guess what means what when you're invoking it!
+echo "First: $1, Second: $2"
+```
+```bash
+#!/usr/bin/env bash
+# Oooooh fancy "make me look like a proper app" named option parsing... don't try and do --foo=bar though!
+FOO=""
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --foo) FOO=$2; shift ;;
+        --)    break ;;
+        *)     echo "Unknown: $1";;
+    esac
+    shift
+done
+```
+```bash
+#!/usr/bin/env bash
+# This thing...
+ARGS=$(getopt -o f:b --long foo:,bar: -n 'myscript' -- "$@")
+eval set -- "$ARGS"
+while true; do
+    case "$1" in
+        -b|--bar) echo "Bar: $2"; shift 2 ;;
+        -f|--foo) echo "Foo: $2"; shift 2 ;;
+        --) shift; break ;;
+        *) break ;;
+    esac
+done
+```
+
+What about help info? Who has time to wire that in?
+
+### The point
+Is this just whining and moaning? Should we just man up and revel in our own ability to memorize all the right incantations like some kind of scripting shaman?
+
+... No. That's **a dumb idea**.
+
+Task Tree allows you to pile all the knowledge of **what** to run, **when** to run it, **where** to run it and **how** to run it into a single, readable place. Then you can delete all the scripts that no-one knows how to use and all the readme docs that lie to the few people that actually waste their time reading them. 
+
+The tasks you need to perform to deliver your project become summarised in an executable file that looks like:
+```yaml
+build:
+  desc: Compile stuff
+  outputs: [target/release/bin]
+  cmd: cargo build --release
+
+package:
+   desc: build installers
+   deps: [build]
+   outputs: [awesome.deb]
+   cmd: |
+      for bin in target/release/*; do
+          if [[ -x "$bin" && ! -d "$bin" ]]; then
+              install -Dm755 "$bin" "debian/awesome/usr/bin/$(basename "$bin")"
+          fi
+      done
+      
+      dpkg-buildpackage -us -uc
+
+test:
+  desc: Run tests
+  deps: [package]
+  inputs: [tests/**/*.py]
+  cmd: PYTHONPATH=src python3 -m pytest tests/ -v
+```
+
+If you want to run the tests then:
+```bash
+tt test
+```
+Boom! Done. `build` will always run, because there's no sensible way to know what Cargo did. However, if Cargo decided that nothing needed to be done and didn't touch the binaries, then `package` will realize that and not do anything. Then `test` will just run with the new tests that you just wrote. If you then immediately run `test` again, then `test` will figure out that none of the dependencies did anything and that none of the test files have changed and then just _do nothing_ - as it should.
+
+This is a toy example, but you can image how it plays out on a more complex project.
+
 ## Installation
 
 ### From PyPI (Recommended)
 
 ```bash
 pipx install tasktree
+```
+
+If you have multiple Python interpreter versions installed, and the _default_ interpreter is a version <3.11, then you can use `pipx`'s `--python` option to specify an interpreter with a version >=3.11:
+
+```bash
+# If the target version is on the PATH
+pipx install --python python3.12 tasktree
+
+# With a path to an interpreter
+pipx install --python /path/to/python3.12 tasktree
 ```
 
 ### From Source
@@ -47,9 +146,11 @@ test:
 Run tasks:
 
 ```bash
-tt build          # Build the application
-tt test           # Run tests (builds first if needed)
+tt                # Print the help
+tt --help         # ...also print the help
 tt --list         # Show all available tasks
+tt build          # Build the application (assuming this is in your tasktree.yaml)
+tt test           # Run tests (builds first if needed)
 ```
 
 ## Core Concepts
