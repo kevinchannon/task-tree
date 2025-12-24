@@ -1,8 +1,5 @@
-"""Command-line interface for Task Tree."""
-
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -120,7 +117,7 @@ def _init_recipe():
         raise typer.Exit(1)
 
     template = """# Task Tree Recipe
-# See https://github.com/kevinchannon/tasktree for documentation
+# See https://github.com/kevinchannon/task-tree for documentation
 
 # Example task definitions:
 
@@ -168,7 +165,7 @@ def main(
         is_eager=True,
         help="Show version and exit",
     ),
-    list: Optional[bool] = typer.Option(None, "--list", "-l", help="List all available tasks"),
+    list_opt: Optional[bool] = typer.Option(None, "--list", "-l", help="List all available tasks"),
     show: Optional[str] = typer.Option(None, "--show", "-s", help="Show task definition"),
     tree: Optional[str] = typer.Option(None, "--tree", "-t", help="Show dependency tree"),
     init: Optional[bool] = typer.Option(
@@ -208,38 +205,32 @@ def main(
       tt --list                    # List all tasks
       tt --tree test               # Show dependency tree for 'test'
     """
-    # Handle list option
-    if list:
+
+    if list_opt:
         _list_tasks()
         raise typer.Exit()
 
-    # Handle show option
     if show:
         _show_task(show)
         raise typer.Exit()
 
-    # Handle tree option
     if tree:
         _show_tree(tree)
         raise typer.Exit()
 
-    # Handle init option
     if init:
         _init_recipe()
         raise typer.Exit()
 
-    # Handle clean options (all three aliases)
     if clean or clean_state or reset:
         _clean_state()
         raise typer.Exit()
 
-    # Handle task execution
     if task_args:
-        # When --only is specified, force execution (--only implies --force)
+        # --only implies --force
         force_execution = force or only or False
         _execute_dynamic_task(task_args, force=force_execution, only=only or False, env=env)
     else:
-        # No arguments - show available tasks
         recipe = _get_recipe()
         if recipe is None:
             console.print("[red]No recipe file found (tasktree.yaml or tt.yaml)[/red]")
@@ -272,7 +263,7 @@ def _clean_state() -> None:
         console.print(f"[yellow]No state file found at {state_path}[/yellow]")
 
 
-def _get_recipe() -> Recipe | None:
+def _get_recipe() -> Optional[Recipe]:
     """Get parsed recipe or None if not found."""
     recipe_path = find_recipe_file()
     if recipe_path is None:
@@ -285,15 +276,7 @@ def _get_recipe() -> Recipe | None:
         raise typer.Exit(1)
 
 
-def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = False, env: str | None = None) -> None:
-    """Execute a task specified by name with arguments.
-
-    Args:
-        args: Command line arguments (task name and task arguments)
-        force: If True, ignore freshness and re-run all tasks
-        only: If True, run only the specified task without dependencies
-        env: If provided, override environment for all tasks
-    """
+def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = False, env: Optional[str] = None) -> None:
     if not args:
         return
 
@@ -348,31 +331,17 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
 
 
 def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, Any]:
-    """Parse command line arguments for a task.
-
-    Args:
-        arg_specs: Argument specifications from task definition
-        arg_values: Command line argument values
-
-    Returns:
-        Dictionary of argument names to values
-
-    Raises:
-        typer.Exit: If arguments are invalid
-    """
     if not arg_specs:
         if arg_values:
             console.print(f"[red]Task does not accept arguments[/red]")
             raise typer.Exit(1)
         return {}
 
-    # Parse argument specifications
     parsed_specs = []
     for spec in arg_specs:
         name, arg_type, default = parse_arg_spec(spec)
         parsed_specs.append((name, arg_type, default))
 
-    # Build argument dictionary
     args_dict = {}
     positional_index = 0
 
@@ -422,14 +391,6 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
 
 
 def _build_rich_tree(dep_tree: dict) -> Tree:
-    """Build a Rich Tree from dependency tree structure.
-
-    Args:
-        dep_tree: Dependency tree structure
-
-    Returns:
-        Rich Tree for display
-    """
     task_name = dep_tree["name"]
     tree = Tree(task_name)
 
