@@ -168,22 +168,20 @@ def main(
         is_eager=True,
         help="Show version and exit",
     ),
-    list_tasks: Optional[bool] = typer.Option(
-        None, "--list", "-l", help="List all available tasks"
-    ),
-    show: Optional[str] = typer.Option(None, "--show", help="Show task definition"),
-    tree: Optional[str] = typer.Option(None, "--tree", help="Show dependency tree"),
+    list: Optional[bool] = typer.Option(None, "--list", "-l", help="List all available tasks"),
+    show: Optional[str] = typer.Option(None, "--show", "-s", help="Show task definition"),
+    tree: Optional[str] = typer.Option(None, "--tree", "-t", help="Show dependency tree"),
     init: Optional[bool] = typer.Option(
-        None, "--init", help="Create a blank tasktree.yaml"
+        None, "--init", "-i", help="Create a blank tasktree.yaml"
     ),
     clean: Optional[bool] = typer.Option(
-        None, "--clean", help="Remove state file (reset task cache)"
+        None, "--clean", "-c", help="Remove state file (reset task cache)"
     ),
     clean_state: Optional[bool] = typer.Option(
-        None, "--clean-state", help="Remove state file (reset task cache)"
+        None, "--clean-state", "-C", help="Remove state file (reset task cache)"
     ),
     reset: Optional[bool] = typer.Option(
-        None, "--reset", help="Remove state file (reset task cache)"
+        None, "--reset", "-r", help="Remove state file (reset task cache)"
     ),
     force: Optional[bool] = typer.Option(
         None, "--force", "-f", help="Force re-run all tasks (ignore freshness)"
@@ -211,7 +209,7 @@ def main(
       tt --tree test               # Show dependency tree for 'test'
     """
     # Handle list option
-    if list_tasks:
+    if list:
         _list_tasks()
         raise typer.Exit()
 
