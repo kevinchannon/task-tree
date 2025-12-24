@@ -348,5 +348,154 @@ test:
                 os.chdir(original_cwd)
 
 
+class TestOnlyOption(unittest.TestCase):
+    """Test the --only/-o option that skips dependencies."""
+
+    def setUp(self):
+        """Set up test fixtures."""
+        self.runner = CliRunner()
+        self.env = {"NO_COLOR": "1"}
+
+    def test_only_option_skips_dependencies(self):
+        """Test --only executes only the target task, not dependencies."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+lint:
+  outputs: [lint.log]
+  cmd: echo "linting" > lint.log
+
+build:
+  deps: [lint]
+  outputs: [build.log]
+  cmd: echo "building" > build.log
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run build with --only
+                result = self.runner.invoke(app, ["--only", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify build ran
+                self.assertTrue((project_root / "build.log").exists())
+
+                # Verify lint did NOT run
+                self.assertFalse((project_root / "lint.log").exists())
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_only_short_flag_works(self):
+        """Test -o short flag works as alias for --only."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+lint:
+  outputs: [lint.log]
+  cmd: echo "linting" > lint.log
+
+build:
+  deps: [lint]
+  outputs: [build.log]
+  cmd: echo "building" > build.log
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run build with -o
+                result = self.runner.invoke(app, ["-o", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify build ran
+                self.assertTrue((project_root / "build.log").exists())
+
+                # Verify lint did NOT run
+                self.assertFalse((project_root / "lint.log").exists())
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_only_option_with_dependency_chain(self):
+        """Test --only skips entire dependency chain."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+lint:
+  outputs: [lint.log]
+  cmd: echo "linting" > lint.log
+
+build:
+  deps: [lint]
+  outputs: [build.log]
+  cmd: echo "building" > build.log
+
+test:
+  deps: [build]
+  outputs: [test.log]
+  cmd: echo "testing" > test.log
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run test with --only
+                result = self.runner.invoke(app, ["--only", "test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify only test ran
+                self.assertTrue((project_root / "test.log").exists())
+                self.assertFalse((project_root / "build.log").exists())
+                self.assertFalse((project_root / "lint.log").exists())
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_only_option_forces_execution(self):
+        """Test --only forces execution (ignores freshness)."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+build:
+  outputs: [build.log]
+  cmd: echo "building" > build.log
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # First run
+                result = self.runner.invoke(app, ["--only", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                build_time_1 = (project_root / "build.log").stat().st_mtime
+
+                # Second run (should re-run because --only implies --force)
+                import time
+                time.sleep(0.01)
+                result = self.runner.invoke(app, ["--only", "build"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+                build_time_2 = (project_root / "build.log").stat().st_mtime
+
+                # Verify build was re-run
+                self.assertGreater(build_time_2, build_time_1)
+
+            finally:
+                os.chdir(original_cwd)
+
+
 if __name__ == "__main__":
     unittest.main()

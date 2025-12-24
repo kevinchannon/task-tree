@@ -579,5 +579,109 @@ class TestExecutorPrivateMethods(unittest.TestCase):
             self.assertEqual(set(result), {"file1.txt", "file2.txt", "script.py"})
 
 
+class TestOnlyMode(unittest.TestCase):
+    """Test the --only mode that skips dependencies."""
+
+    @patch("subprocess.run")
+    def test_only_mode_skips_dependencies(self, mock_run):
+        """Test that only=True executes only the target task, not dependencies."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+            tasks = {
+                "lint": Task(name="lint", cmd="echo linting"),
+                "build": Task(name="build", cmd="echo building", deps=["lint"]),
+            }
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+
+            # Execute with only=True
+            statuses = executor.execute_task("build", only=True)
+
+            # Verify only build was executed, not lint
+            self.assertEqual(mock_run.call_count, 1)
+            call_args = mock_run.call_args
+            self.assertEqual(call_args[0][0], "echo building")
+
+            # Verify statuses only contains the target task
+            self.assertEqual(len(statuses), 1)
+            self.assertIn("build", statuses)
+            self.assertNotIn("lint", statuses)
+
+    @patch("subprocess.run")
+    def test_only_mode_with_multiple_dependencies(self, mock_run):
+        """Test that only=True skips all dependencies in a chain."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+            tasks = {
+                "lint": Task(name="lint", cmd="echo linting"),
+                "build": Task(name="build", cmd="echo building", deps=["lint"]),
+                "test": Task(name="test", cmd="echo testing", deps=["build"]),
+            }
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+
+            # Execute test with only=True
+            statuses = executor.execute_task("test", only=True)
+
+            # Verify only test was executed
+            self.assertEqual(mock_run.call_count, 1)
+            call_args = mock_run.call_args
+            self.assertEqual(call_args[0][0], "echo testing")
+
+            # Verify statuses only contains test
+            self.assertEqual(len(statuses), 1)
+            self.assertIn("test", statuses)
+            self.assertNotIn("build", statuses)
+            self.assertNotIn("lint", statuses)
+
+    @patch("subprocess.run")
+    def test_only_mode_forces_execution(self, mock_run):
+        """Test that only=True forces execution (ignores freshness)."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create output file
+            output_file = project_root / "output.txt"
+            output_file.write_text("output")
+
+            # Create state
+            state_manager = StateManager(project_root)
+            from tasktree.hasher import hash_task, make_cache_key
+
+            task = Task(
+                name="build",
+                cmd="echo test > output.txt",
+                outputs=["output.txt"],
+            )
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            cache_key = make_cache_key(task_hash)
+
+            # Set state with recent run
+            state_manager.set(
+                cache_key,
+                TaskState(last_run=time.time(), input_state={}),
+            )
+
+            tasks = {"build": task}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+
+            # Execute with only=True
+            statuses = executor.execute_task("build", only=True)
+
+            # Verify task was executed despite being fresh (only implies force)
+            self.assertEqual(mock_run.call_count, 1)
+            self.assertTrue(statuses["build"].will_run)
+            self.assertEqual(statuses["build"].reason, "forced")
+
+
 if __name__ == "__main__":
     unittest.main()

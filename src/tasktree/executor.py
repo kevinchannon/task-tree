@@ -147,6 +147,7 @@ class Executor:
         task_name: str,
         args_dict: dict[str, Any] | None = None,
         force: bool = False,
+        only: bool = False,
     ) -> dict[str, TaskStatus]:
         """Execute a task and its dependencies.
 
@@ -154,6 +155,7 @@ class Executor:
             task_name: Name of task to execute
             args_dict: Arguments to pass to the task
             force: If True, ignore freshness and re-run all tasks
+            only: If True, run only the specified task without dependencies (implies force=True)
 
         Returns:
             Dictionary of task names to their execution status
@@ -164,8 +166,17 @@ class Executor:
         if args_dict is None:
             args_dict = {}
 
+        # When only=True, force execution (ignore freshness)
+        if only:
+            force = True
+
         # Resolve execution order
-        execution_order = resolve_execution_order(self.recipe, task_name)
+        if only:
+            # Only execute the target task, skip dependencies
+            execution_order = [task_name]
+        else:
+            # Execute task and all dependencies
+            execution_order = resolve_execution_order(self.recipe, task_name)
 
         # Check status of all tasks
         statuses: dict[str, TaskStatus] = {}

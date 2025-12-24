@@ -188,6 +188,9 @@ def main(
     force: Optional[bool] = typer.Option(
         None, "--force", "-f", help="Force re-run all tasks (ignore freshness)"
     ),
+    only: Optional[bool] = typer.Option(
+        None, "--only", "-o", help="Run only the specified task, skip dependencies (implies --force)"
+    ),
     task_args: Optional[List[str]] = typer.Argument(
         None, help="Task name and arguments"
     ),
@@ -231,7 +234,9 @@ def main(
 
     # Handle task execution
     if task_args:
-        _execute_dynamic_task(task_args, force=force or False)
+        # When --only is specified, force execution (--only implies --force)
+        force_execution = force or only or False
+        _execute_dynamic_task(task_args, force=force_execution, only=only or False)
     else:
         # No arguments - show available tasks
         recipe = _get_recipe()
@@ -279,12 +284,13 @@ def _get_recipe() -> Recipe | None:
         raise typer.Exit(1)
 
 
-def _execute_dynamic_task(args: list[str], force: bool = False) -> None:
+def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = False) -> None:
     """Execute a task specified by name with arguments.
 
     Args:
         args: Command line arguments (task name and task arguments)
         force: If True, ignore freshness and re-run all tasks
+        only: If True, run only the specified task without dependencies
     """
     if not args:
         return
@@ -321,7 +327,7 @@ def _execute_dynamic_task(args: list[str], force: bool = False) -> None:
     # Execute task
     executor = Executor(recipe, state)
     try:
-        executor.execute_task(task_name, args_dict, force=force)
+        executor.execute_task(task_name, args_dict, force=force, only=only)
         console.print(f"[green]✓ Task '{task_name}' completed successfully[/green]")
     except Exception as e:
         console.print(f"[red]✗ Task '{task_name}' failed: {e}[/red]")
