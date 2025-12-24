@@ -218,11 +218,13 @@ def _parse_file_with_env(
     return tasks, environments, default_env
 
 
-def parse_recipe(recipe_path: Path) -> Recipe:
+def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
     """Parse a recipe file and handle imports recursively.
 
     Args:
         recipe_path: Path to the main recipe file
+        project_root: Optional project root directory. If not provided, uses recipe file's parent directory.
+                     When using --tasks option, this should be the current working directory.
 
     Returns:
         Recipe object with all tasks (including recursively imported tasks)
@@ -236,7 +238,9 @@ def parse_recipe(recipe_path: Path) -> Recipe:
     if not recipe_path.exists():
         raise FileNotFoundError(f"Recipe file not found: {recipe_path}")
 
-    project_root = recipe_path.parent
+    # Default project root to recipe file's parent if not specified
+    if project_root is None:
+        project_root = recipe_path.parent
 
     # Parse main file - it will recursively handle all imports
     tasks, environments, default_env = _parse_file_with_env(
@@ -295,8 +299,9 @@ def _parse_file(
     tasks: dict[str, Task] = {}
     file_dir = file_path.parent
 
-    # Default working directory is the file's directory
-    default_working_dir = str(file_dir.relative_to(project_root)) if file_dir != project_root else "."
+    # Default working directory is the project root (where tt is invoked)
+    # NOT the directory where the tasks file is located
+    default_working_dir = "."
 
     # Track local import namespaces for dependency rewriting
     local_import_namespaces: set[str] = set()

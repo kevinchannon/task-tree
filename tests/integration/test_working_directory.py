@@ -102,6 +102,47 @@ tasks:
             finally:
                 os.chdir(original_cwd)
 
+    def test_default_working_dir_is_invocation_dir_not_tasks_file_dir(self):
+        """Test that without explicit working_dir, tasks run from where tt is invoked, not where the tasks file is."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create subdirectory with tasks file
+            subdir = project_root / "config"
+            subdir.mkdir()
+
+            # Create tasks file in subdirectory
+            tasks_file = subdir / "build.tasks"
+            tasks_file.write_text("""
+tasks:
+  check-location:
+    desc: Check where we execute from
+    cmd: pwd > location.txt
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                # Invoke tt from project root, pointing to tasks file in subdir
+                os.chdir(project_root)
+
+                result = self.runner.invoke(app, ["--tasks", "config/build.tasks", "check-location"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify output was created in project root (where we invoked tt)
+                # NOT in config/ (where the tasks file is)
+                output_in_root = project_root / "location.txt"
+                output_in_subdir = subdir / "location.txt"
+
+                self.assertTrue(output_in_root.exists(), "Output should be in invocation directory (project root)")
+                self.assertFalse(output_in_subdir.exists(), "Output should NOT be in tasks file directory")
+
+                # Verify pwd shows project root path
+                pwd_output = output_in_root.read_text().strip()
+                self.assertEqual(Path(pwd_output).resolve(), project_root.resolve())
+
+            finally:
+                os.chdir(original_cwd)
+
 
 if __name__ == "__main__":
     unittest.main()

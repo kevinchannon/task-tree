@@ -291,6 +291,8 @@ def _get_recipe(recipe_file: Optional[str] = None) -> Optional[Recipe]:
         if not recipe_path.exists():
             console.print(f"[red]Recipe file not found: {recipe_file}[/red]")
             raise typer.Exit(1)
+        # When explicitly specified, project root is current working directory
+        project_root = Path.cwd()
     else:
         try:
             recipe_path = find_recipe_file()
@@ -300,9 +302,11 @@ def _get_recipe(recipe_file: Optional[str] = None) -> Optional[Recipe]:
             # Multiple recipe files found
             console.print(f"[red]{e}[/red]")
             raise typer.Exit(1)
+        # When auto-discovered, project root is recipe file's parent
+        project_root = None
 
     try:
-        return parse_recipe(recipe_path)
+        return parse_recipe(recipe_path, project_root)
     except Exception as e:
         console.print(f"[red]Error parsing recipe: {e}[/red]")
         raise typer.Exit(1)
