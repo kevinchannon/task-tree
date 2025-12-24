@@ -535,7 +535,7 @@ tasks:
 
             # Create common.yaml that imports base.yaml
             (project_root / "common.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -549,7 +549,7 @@ tasks:
             # Create main recipe that imports common.yaml
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: common.yaml
     as: common
 
@@ -615,7 +615,7 @@ tasks:
             # Create main recipe
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: shared.yaml
     as: shared
 

@@ -111,7 +111,7 @@ tasks:
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text(
                 """
-import:
+imports:
   - file: common/build.yaml
     as: build
 
@@ -158,7 +158,7 @@ tasks:
             # Create main recipe
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: build.yaml
     as: build
   - file: test.yaml
@@ -191,7 +191,7 @@ tasks:
 
             # Create middle level import that imports base
             (Path(tmpdir) / "common.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -204,7 +204,7 @@ tasks:
             # Create main recipe that imports common
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: common.yaml
     as: common
 
@@ -234,7 +234,7 @@ tasks:
 
             # Level 3
             (Path(tmpdir) / "level3.yaml").write_text("""
-import:
+imports:
   - file: level4.yaml
     as: l4
 
@@ -246,7 +246,7 @@ tasks:
 
             # Level 2
             (Path(tmpdir) / "level2.yaml").write_text("""
-import:
+imports:
   - file: level3.yaml
     as: l3
 
@@ -259,7 +259,7 @@ tasks:
             # Level 1 (main)
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: level2.yaml
     as: l2
 
@@ -287,7 +287,7 @@ tasks:
 
             # Left branch (B)
             (Path(tmpdir) / "left.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -299,7 +299,7 @@ tasks:
 
             # Right branch (C)
             (Path(tmpdir) / "right.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -312,7 +312,7 @@ tasks:
             # Main file (A)
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: left.yaml
     as: left
   - file: right.yaml
@@ -337,7 +337,7 @@ tasks:
         with TemporaryDirectory() as tmpdir:
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: nonexistent.yaml
     as: missing
 
@@ -366,7 +366,7 @@ tasks:
 
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: tasks/build/compile.yaml
     as: compile
 
@@ -396,7 +396,7 @@ tasks:
 
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: import.yaml
     as: imported
 """)
@@ -432,7 +432,7 @@ tasks:
             # Main recipe imports both
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: build.yaml
     as: build
   - file: test.yaml
@@ -454,7 +454,7 @@ import:
 
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: empty.yaml
     as: empty
 
@@ -482,7 +482,7 @@ tasks:
 
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: whitespace.yaml
     as: ws
 
@@ -499,7 +499,7 @@ tasks:
         with TemporaryDirectory() as tmpdir:
             # Create a file that imports itself
             (Path(tmpdir) / "self.yaml").write_text("""
-import:
+imports:
   - file: self.yaml
     as: myself
 
@@ -521,7 +521,7 @@ tasks:
         with TemporaryDirectory() as tmpdir:
             # A imports B
             (Path(tmpdir) / "a.yaml").write_text("""
-import:
+imports:
   - file: b.yaml
     as: b
 
@@ -532,7 +532,7 @@ tasks:
 
             # B imports A (creates cycle)
             (Path(tmpdir) / "b.yaml").write_text("""
-import:
+imports:
   - file: a.yaml
     as: a
 
@@ -556,7 +556,7 @@ tasks:
         with TemporaryDirectory() as tmpdir:
             # A imports B
             (Path(tmpdir) / "a.yaml").write_text("""
-import:
+imports:
   - file: b.yaml
     as: b
 
@@ -567,7 +567,7 @@ tasks:
 
             # B imports C
             (Path(tmpdir) / "b.yaml").write_text("""
-import:
+imports:
   - file: c.yaml
     as: c
 
@@ -578,7 +578,7 @@ tasks:
 
             # C imports A (creates cycle)
             (Path(tmpdir) / "c.yaml").write_text("""
-import:
+imports:
   - file: a.yaml
     as: a
 
@@ -618,7 +618,7 @@ tasks:
 
             # common/base.yaml imports ../shared/utils.yaml (relative to common/)
             (common_dir / "base.yaml").write_text("""
-import:
+imports:
   - file: ../shared/utils.yaml
     as: utils
 
@@ -631,7 +631,7 @@ tasks:
             # Main recipe imports common/base.yaml
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: common/base.yaml
     as: common
 
@@ -660,7 +660,7 @@ tasks:
         with TemporaryDirectory() as tmpdir:
             # common.yaml tries to import a file that doesn't exist
             (Path(tmpdir) / "common.yaml").write_text("""
-import:
+imports:
   - file: nonexistent.yaml
     as: missing
 
@@ -671,7 +671,7 @@ tasks:
 
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: common.yaml
     as: common
 """)
@@ -1088,7 +1088,7 @@ tasks:
             # Create main file with only import
             recipe_path = Path(tmpdir) / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 """)

@@ -217,7 +217,7 @@ tasks:
       # PowerShell-specific post-processing
 ```
 
-## Import Behavior
+## Imports Behavior
 
 When importing task files that contain `environments` sections, both environments and tasks are namespaced to maintain isolation and prevent naming conflicts.
 
@@ -251,7 +251,7 @@ tasks:
 
 ```yaml
 # Root tasktree.yaml
-import:
+imports:
   utils: shared/utils.yaml
 
 environments:
@@ -264,13 +264,13 @@ tasks:
   main:
     deps: [utils.task-a]
     cmd: echo "done"
-  
+
   other:
     env: utils.python  # Can reference imported environment
     cmd: python analyze.py
 ```
 
-**After import resolution (in-memory representation):**
+**After imports resolution (in-memory representation):**
 - `utils.python` environment available
 - `utils.custom-bash` environment available
 - `utils.task-a` gets `env: utils.python` (file's default, namespaced)
@@ -297,7 +297,7 @@ tasks:
 
 **Behavior preservation:**
 - A task's behavior should not change based on which file imports it
-- File-level defaults are resolved during import and frozen into the task definition
+- File-level defaults are resolved during imports and frozen into the task definition
 - Tasks without env and without file default consistently use global platform default
 
 **Scope of defaults:**
@@ -320,7 +320,7 @@ tasks:
     cmd: print("setup")  # Will use python (file default)
 ```
 
-After import as `utils`:
+After imports as `utils`:
 - `utils.setup` has `env: utils.python`
 
 **Example 2: Imported file without default**
@@ -339,14 +339,14 @@ tasks:
     cmd: echo "test"  # No env, file has no default
 ```
 
-After import as `scripts`:
+After imports as `scripts`:
 - `scripts.build` has `env: scripts.node`
 - `scripts.test` has no env → uses global platform default (bash on Unix)
 
 **Example 3: Root file references imported environment**
 ```yaml
 # Root file
-import:
+imports:
   utils: shared/utils.yaml
 
 tasks:

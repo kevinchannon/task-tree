@@ -270,7 +270,7 @@ def _parse_file(
     local_import_namespaces: set[str] = set()
 
     # Process nested imports FIRST
-    imports = data.get("import", [])
+    imports = data.get("imports", [])
     if imports:
         for import_spec in imports:
             child_file = import_spec["file"]
@@ -297,8 +297,8 @@ def _parse_file(
 
             tasks.update(nested_tasks)
 
-    # Validate top-level keys (only import, environments, and tasks are allowed)
-    VALID_TOP_LEVEL_KEYS = {"import", "environments", "tasks"}
+    # Validate top-level keys (only imports, environments, and tasks are allowed)
+    VALID_TOP_LEVEL_KEYS = {"imports", "environments", "tasks"}
 
     # Check if tasks key is missing when there appear to be task definitions at root
     # Do this BEFORE checking for unknown keys, to provide better error message
@@ -328,7 +328,7 @@ def _parse_file(
             f"Invalid recipe format in {file_path}\n\n"
             f"Unknown top-level keys: {', '.join(sorted(invalid_keys))}\n\n"
             f"Valid top-level keys are:\n"
-            f"  - import       (for importing task files)\n"
+            f"  - imports      (for importing task files)\n"
             f"  - environments (for shell environment configuration)\n"
             f"  - tasks        (for task definitions)"
         )

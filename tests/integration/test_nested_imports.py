@@ -40,7 +40,7 @@ tasks:
 
             # Create common.yaml that imports base.yaml
             (project_root / "common.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -54,7 +54,7 @@ tasks:
             # Create main recipe that imports common.yaml
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: common.yaml
     as: common
 
@@ -108,7 +108,7 @@ tasks:
 
             # Level 2: Import base and add middleware tasks
             (project_root / "middleware.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -127,7 +127,7 @@ tasks:
             # Level 1: Import middleware and add app tasks
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: middleware.yaml
     as: mid
 
@@ -185,7 +185,7 @@ tasks:
 
             # Left branch (B)
             (project_root / "left.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -198,7 +198,7 @@ tasks:
 
             # Right branch (C)
             (project_root / "right.yaml").write_text("""
-import:
+imports:
   - file: base.yaml
     as: base
 
@@ -212,7 +212,7 @@ tasks:
             # Main file (A) imports both branches
             recipe_path = project_root / "tasktree.yaml"
             recipe_path.write_text("""
-import:
+imports:
   - file: left.yaml
     as: left
   - file: right.yaml

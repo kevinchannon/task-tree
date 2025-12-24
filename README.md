@@ -116,7 +116,7 @@ tasks:
 ### Why This Change?
 
 1. **Clearer structure**: Explicit separation of tasks from configuration
-2. **No naming conflicts**: You can now create tasks named "import" or "environments"
+2. **No naming conflicts**: You can now create tasks named "imports" or "environments"
 3. **Better error messages**: More helpful validation errors
 4. **Consistency**: All recipe files use the same format
 
@@ -377,7 +377,7 @@ Split task definitions across multiple files for better organisation:
 
 ```yaml
 # tasktree.yaml
-import:
+imports:
   - file: build/tasks.yml
     as: build
   - file: deploy/tasks.yml
@@ -503,7 +503,7 @@ tt --force deploy production
 ## Example: Full Build Pipeline
 
 ```yaml
-import:
+imports:
   - file: common/docker.yml
     as: docker
 
