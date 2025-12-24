@@ -94,52 +94,6 @@ Boom! Done. `build` will always run, because there's no sensible way to know wha
 
 This is a toy example, but you can image how it plays out on a more complex project.
 
-## Migrating from v1.x to v2.0
-
-Version 2.0 requires all task definitions to be under a top-level `tasks:` key.
-
-### Quick Migration
-
-Wrap your existing tasks in a `tasks:` block:
-
-```yaml
-# Before (v1.x)
-build:
-  cmd: cargo build
-
-# After (v2.0)
-tasks:
-  build:
-    cmd: cargo build
-```
-
-### Why This Change?
-
-1. **Clearer structure**: Explicit separation of tasks from configuration
-2. **No naming conflicts**: You can now create tasks named "imports" or "environments"
-3. **Better error messages**: More helpful validation errors
-4. **Consistency**: All recipe files use the same format
-
-### Error Messages
-
-If you forget to update, you'll see a clear error:
-
-```
-Invalid recipe format in tasktree.yaml
-
-Task definitions must be under a top-level "tasks:" key.
-
-Found these keys at root level: build, test
-
-Did you mean:
-
-tasks:
-  build:
-    cmd: ...
-  test:
-    cmd: ...
-```
-
 ## Installation
 
 ### From PyPI (Recommended)
