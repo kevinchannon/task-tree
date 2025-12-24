@@ -316,8 +316,8 @@ class Executor:
         # Execute command
         print(f"Running: {task.name}")
 
-        # Detect multi-line commands
-        if "\n" in cmd:
+        # Detect multi-line commands (ignore trailing newlines from YAML folded blocks)
+        if "\n" in cmd.rstrip():
             self._run_multiline_command(cmd, working_dir, task.name, shell, preamble)
         else:
             self._run_single_line_command(cmd, working_dir, task.name, shell, shell_args)

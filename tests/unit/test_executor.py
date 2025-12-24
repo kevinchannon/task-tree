@@ -709,6 +709,27 @@ class TestMultilineExecution(unittest.TestCase):
             self.assertFalse(call_kwargs.get("shell", False))
 
     @patch("subprocess.run")
+    def test_folded_block_uses_single_line_execution(self, mock_run):
+        """Test that YAML folded blocks (>) are treated as single-line commands."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+
+            # Simulate a folded block command (has trailing newline but no internal ones)
+            folded_cmd = "gcc -o bin/app src/*.c -I include\n"
+
+            tasks = {"build": Task(name="build", cmd=folded_cmd)}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            mock_run.return_value = MagicMock(returncode=0)
+            executor.execute_task("build")
+
+            # Should use single-line execution (shell + args + cmd)
+            call_args = mock_run.call_args[0][0]
+            self.assertEqual(call_args, ["bash", "-c", folded_cmd])
+
+    @patch("subprocess.run")
     def test_multiline_command_uses_temp_file(self, mock_run):
         """Test multi-line commands execute via temporary script file."""
         with TemporaryDirectory() as tmpdir:
