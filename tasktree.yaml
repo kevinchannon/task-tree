@@ -20,7 +20,7 @@ tasks:
 
   install-dev:
     desc: Install package in editable mode for development
-    cmd: uv sync
+    cmd: uv sync --all-extras
 
   clean:
     desc: Remove build artifacts and cache files
