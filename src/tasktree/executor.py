@@ -27,7 +27,7 @@ class TaskStatus:
     task_name: str
     will_run: bool
     reason: str  # "fresh", "inputs_changed", "definition_changed",
-    # "never_run", "no_outputs", "outputs_missing", "forced"
+    # "never_run", "no_outputs", "outputs_missing", "forced", "environment_changed"
     changed_files: list[str] = field(default_factory=list)
     last_run: datetime | None = None
 
@@ -142,11 +142,12 @@ class Executor:
         A task executes if ANY of these conditions are met:
         1. Force flag is set (--force)
         2. Task definition hash differs from cached state
-        3. Any explicit inputs have newer mtime than last_run
-        4. Any implicit inputs (from deps) have changed
-        5. No cached state exists for this task+args combination
-        6. Task has no inputs AND no outputs (always runs)
-        7. Different arguments than any cached execution
+        3. Environment definition has changed
+        4. Any explicit inputs have newer mtime than last_run
+        5. Any implicit inputs (from deps) have changed
+        6. No cached state exists for this task+args combination
+        7. Task has no inputs AND no outputs (always runs)
+        8. Different arguments than any cached execution
 
         Args:
             task: Task to check
@@ -186,6 +187,16 @@ class Executor:
                 task_name=task.name,
                 will_run=True,
                 reason="never_run",
+            )
+
+        # Check if environment definition has changed
+        env_changed = self._check_environment_changed(task, cached_state, effective_env)
+        if env_changed:
+            return TaskStatus(
+                task_name=task.name,
+                will_run=True,
+                reason="environment_changed",
+                last_run=datetime.fromtimestamp(cached_state.last_run),
             )
 
         # Check if inputs have changed
@@ -495,6 +506,45 @@ class Executor:
         all_inputs.extend(implicit_inputs)
         return all_inputs
 
+    def _check_environment_changed(
+        self, task: Task, cached_state: TaskState, env_name: str
+    ) -> bool:
+        """Check if environment definition has changed since last run.
+
+        Args:
+            task: Task to check
+            cached_state: Cached state from previous run
+            env_name: Effective environment name (from _get_effective_env_name)
+
+        Returns:
+            True if environment definition changed, False otherwise
+        """
+        # If using platform default (no environment), no definition to track
+        if not env_name:
+            return False
+
+        # Get environment definition
+        env = self.recipe.get_environment(env_name)
+        if env is None:
+            # Environment was deleted - treat as changed
+            return True
+
+        # Compute current environment hash
+        from tasktree.hasher import hash_environment_definition
+
+        current_env_hash = hash_environment_definition(env)
+
+        # Get cached environment hash
+        marker_key = f"_env_hash_{env_name}"
+        cached_env_hash = cached_state.input_state.get(marker_key)
+
+        # If no cached hash (old state file), treat as changed to establish baseline
+        if cached_env_hash is None:
+            return True
+
+        # Compare hashes
+        return current_env_hash != cached_env_hash
+
     def _check_inputs_changed(
         self, task: Task, cached_state: TaskState, all_inputs: list[str]
     ) -> list[str]:
@@ -697,6 +747,13 @@ class Executor:
                 except (OSError, IOError):
                     # If we can't read Dockerfile, skip digest tracking
                     pass
+
+            # Record environment definition hash for all environments (shell and Docker)
+            if env:
+                from tasktree.hasher import hash_environment_definition
+
+                env_hash = hash_environment_definition(env)
+                input_state[f"_env_hash_{env_name}"] = env_hash
 
         # Create new state
         state = TaskState(

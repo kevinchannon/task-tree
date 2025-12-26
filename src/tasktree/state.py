@@ -13,7 +13,7 @@ class TaskState:
     """State for a single task execution."""
 
     last_run: float
-    input_state: dict[str, float] = field(default_factory=dict)
+    input_state: dict[str, float | str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
