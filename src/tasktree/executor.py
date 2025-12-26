@@ -27,7 +27,7 @@ class TaskStatus:
     task_name: str
     will_run: bool
     reason: str  # "fresh", "inputs_changed", "definition_changed",
-    # "never_run", "dependency_triggered", "no_outputs"
+    # "never_run", "no_outputs", "outputs_missing", "forced"
     changed_files: list[str] = field(default_factory=list)
     last_run: datetime | None = None
 
@@ -135,7 +135,6 @@ class Executor:
         self,
         task: Task,
         args_dict: dict[str, Any],
-        dep_statuses: dict[str, TaskStatus],
         force: bool = False,
     ) -> TaskStatus:
         """Check if a task needs to run.
@@ -152,7 +151,6 @@ class Executor:
         Args:
             task: Task to check
             args_dict: Arguments for this task execution
-            dep_statuses: Status of dependencies
             force: If True, ignore freshness and force execution
 
         Returns:
@@ -179,14 +177,6 @@ class Executor:
                 task_name=task.name,
                 will_run=True,
                 reason="no_outputs",
-            )
-
-        # Check if any dependency triggered
-        if any(status.will_run for status in dep_statuses.values()):
-            return TaskStatus(
-                task_name=task.name,
-                will_run=True,
-                reason="dependency_triggered",
             )
 
         # Check cached state
@@ -264,23 +254,19 @@ class Executor:
             # Execute task and all dependencies
             execution_order = resolve_execution_order(self.recipe, task_name)
 
-        # Check status of all tasks
+        # Single phase: Check and execute incrementally
         statuses: dict[str, TaskStatus] = {}
         for name in execution_order:
             task = self.recipe.tasks[name]
 
-            # Get status of dependencies
-            dep_statuses = {dep: statuses[dep] for dep in task.deps if dep in statuses}
-
             # Determine task-specific args (only for target task)
             task_args = args_dict if name == task_name else {}
 
-            status = self.check_task_status(task, task_args, dep_statuses, force=force)
+            # Check if task needs to run (based on CURRENT filesystem state)
+            status = self.check_task_status(task, task_args, force=force)
             statuses[name] = status
 
-        # Execute tasks that need to run
-        for name in execution_order:
-            status = statuses[name]
+            # Execute immediately if needed
             if status.will_run:
                 # Warn if re-running due to missing outputs
                 if status.reason == "outputs_missing":
@@ -290,8 +276,6 @@ class Executor:
                         file=sys.stderr,
                     )
 
-                task = self.recipe.tasks[name]
-                task_args = args_dict if name == task_name else {}
                 self._run_task(task, task_args)
 
         return statuses
