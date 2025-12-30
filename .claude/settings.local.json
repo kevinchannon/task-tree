@@ -5,7 +5,8 @@
       "Bash(python3 -m pytest:*)",
       "Bash(uv run pytest:*)",
       "Bash(uv run python:*)",
-      "Bash(uv pip install:*)"
+      "Bash(uv pip install:*)",
+      "Bash(grep:*)"
     ]
   }
 }
