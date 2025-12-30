@@ -37,7 +37,7 @@ tasks:
   deploy:
     args: [environment, region:str=us-west-1, port:int=8080, debug:bool=false]
     outputs: [deploy.log]
-    cmd: echo "env={{environment}} region={{region}} port={{port}} debug={{debug}}" > deploy.log
+    cmd: 'echo "env={{ arg: environment }} region={{ arg: region }} port={{ arg: port }} debug={{ arg: debug }}" > deploy.log'
 """)
 
             original_cwd = os.getcwd()

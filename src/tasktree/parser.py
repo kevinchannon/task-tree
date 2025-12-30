@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List
@@ -78,6 +79,7 @@ class Recipe:
     environments: dict[str, Environment] = field(default_factory=dict)
     default_env: str = ""  # Name of default environment
     global_env_override: str = ""  # Global environment override (set via CLI --env)
+    variables: dict[str, str] = field(default_factory=dict)  # Global variables (resolved at parse time)
 
     def get_task(self, name: str) -> Task | None:
         """Get task by name.
@@ -169,13 +171,150 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
     return None
 
 
+def _validate_variable_name(name: str) -> None:
+    """Validate that a variable name is a valid identifier.
+
+    Args:
+        name: Variable name to validate
+
+    Raises:
+        ValueError: If name is not a valid identifier
+    """
+    if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+        raise ValueError(
+            f"Variable name '{name}' is invalid. Names must start with "
+            f"letter/underscore and contain only alphanumerics and underscores."
+        )
+
+
+def _infer_variable_type(value: Any) -> str:
+    """Infer type name from Python value.
+
+    Args:
+        value: Python value from YAML
+
+    Returns:
+        Type name string (str, int, float, bool)
+
+    Raises:
+        ValueError: If value type is not supported
+    """
+    type_map = {
+        str: "str",
+        int: "int",
+        float: "float",
+        bool: "bool"
+    }
+    python_type = type(value)
+    if python_type not in type_map:
+        raise ValueError(
+            f"Variable has unsupported type '{python_type.__name__}'. "
+            f"Supported types: str, int, float, bool, path, datetime, ip, ipv4, ipv6, email, hostname"
+        )
+    return type_map[python_type]
+
+
+def _resolve_variable_value(
+    name: str,
+    raw_value: Any,
+    resolved: dict[str, str],
+    resolution_stack: list[str]
+) -> str:
+    """Resolve a single variable value with circular reference detection.
+
+    Args:
+        name: Variable name being resolved
+        raw_value: Raw value from YAML (int, str, bool, float, etc.)
+        resolved: Dictionary of already-resolved variables
+        resolution_stack: Stack of variables currently being resolved (for circular detection)
+
+    Returns:
+        Resolved string value
+
+    Raises:
+        ValueError: If circular reference detected or validation fails
+    """
+    # Check for circular reference
+    if name in resolution_stack:
+        cycle = " -> ".join(resolution_stack + [name])
+        raise ValueError(f"Circular reference detected in variables: {cycle}")
+
+    resolution_stack.append(name)
+
+    try:
+        # Validate and infer type
+        type_name = _infer_variable_type(raw_value)
+        from tasktree.types import get_click_type
+        validator = get_click_type(type_name)
+
+        # Validate and stringify the value
+        string_value = validator.convert(raw_value, None, None)
+
+        # Substitute any {{ var: ... }} references in the string value
+        from tasktree.substitution import substitute_variables
+        try:
+            resolved_value = substitute_variables(str(string_value), resolved)
+        except ValueError as e:
+            # Check if the undefined variable is in the resolution stack (circular reference)
+            error_msg = str(e)
+            if "not defined" in error_msg:
+                # Extract the variable name from the error message
+                import re
+                match = re.search(r"Variable '(\w+)' is not defined", error_msg)
+                if match:
+                    undefined_var = match.group(1)
+                    if undefined_var in resolution_stack:
+                        cycle = " -> ".join(resolution_stack + [undefined_var])
+                        raise ValueError(f"Circular reference detected in variables: {cycle}")
+            # Re-raise the original error if not circular
+            raise
+
+        return resolved_value
+    finally:
+        resolution_stack.pop()
+
+
+def _parse_variables_section(data: dict) -> dict[str, str]:
+    """Parse and resolve the variables section from YAML data.
+
+    Variables are resolved in order, allowing variables to reference
+    previously-defined variables using {{ var: name }} syntax.
+
+    Args:
+        data: Parsed YAML data (root level)
+
+    Returns:
+        Dictionary mapping variable names to resolved string values
+
+    Raises:
+        ValueError: For validation errors, undefined refs, or circular refs
+    """
+    if "variables" not in data:
+        return {}
+
+    vars_data = data["variables"]
+    if not isinstance(vars_data, dict):
+        raise ValueError("'variables' must be a dictionary")
+
+    resolved = {}  # name -> resolved string value
+    resolution_stack = []  # For circular detection
+
+    for var_name, raw_value in vars_data.items():
+        _validate_variable_name(var_name)
+        resolved[var_name] = _resolve_variable_value(
+            var_name, raw_value, resolved, resolution_stack
+        )
+
+    return resolved
+
+
 def _parse_file_with_env(
     file_path: Path,
     namespace: str | None,
     project_root: Path,
     import_stack: list[Path] | None = None,
-) -> tuple[dict[str, Task], dict[str, Environment], str]:
-    """Parse file and extract tasks and environments.
+) -> tuple[dict[str, Task], dict[str, Environment], str, dict[str, str]]:
+    """Parse file and extract tasks, environments, and variables.
 
     Args:
         file_path: Path to YAML file
@@ -184,19 +323,37 @@ def _parse_file_with_env(
         import_stack: Stack of files being imported (for circular detection)
 
     Returns:
-        Tuple of (tasks, environments, default_env_name)
+        Tuple of (tasks, environments, default_env_name, variables)
     """
     # Parse tasks normally
     tasks = _parse_file(file_path, namespace, project_root, import_stack)
 
-    # Load YAML again to extract environments (only from root file)
+    # Load YAML again to extract environments and variables (only from root file)
     environments: dict[str, Environment] = {}
     default_env = ""
+    variables: dict[str, str] = {}
 
-    # Only parse environments from the root file (namespace is None)
+    # Only parse environments and variables from the root file (namespace is None)
     if namespace is None:
         with open(file_path, "r") as f:
             data = yaml.safe_load(f)
+
+        # Parse variables first (so they can be used in environment preambles and tasks)
+        if data:
+            variables = _parse_variables_section(data)
+
+        # Apply variable substitution to all tasks
+        if variables:
+            from tasktree.substitution import substitute_variables
+
+            for task in tasks.values():
+                task.cmd = substitute_variables(task.cmd, variables)
+                task.desc = substitute_variables(task.desc, variables)
+                task.working_dir = substitute_variables(task.working_dir, variables)
+                task.inputs = [substitute_variables(inp, variables) for inp in task.inputs]
+                task.outputs = [substitute_variables(out, variables) for out in task.outputs]
+                # Substitute in argument default values (in arg spec strings)
+                task.args = [substitute_variables(arg, variables) for arg in task.args]
 
         if data and "environments" in data:
             env_data = data["environments"]
@@ -219,6 +376,11 @@ def _parse_file_with_env(
                     args = env_config.get("args", [])
                     preamble = env_config.get("preamble", "")
                     working_dir = env_config.get("working_dir", "")
+
+                    # Substitute variables in preamble
+                    if preamble and variables:
+                        from tasktree.substitution import substitute_variables
+                        preamble = substitute_variables(preamble, variables)
 
                     # Parse Docker-specific fields
                     dockerfile = env_config.get("dockerfile", "")
@@ -283,7 +445,7 @@ def _parse_file_with_env(
                         extra_args=extra_args
                     )
 
-    return tasks, environments, default_env
+    return tasks, environments, default_env, variables
 
 
 def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
@@ -311,7 +473,7 @@ def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
         project_root = recipe_path.parent
 
     # Parse main file - it will recursively handle all imports
-    tasks, environments, default_env = _parse_file_with_env(
+    tasks, environments, default_env, variables = _parse_file_with_env(
         recipe_path, namespace=None, project_root=project_root
     )
 
@@ -320,6 +482,7 @@ def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
         project_root=project_root,
         environments=environments,
         default_env=default_env,
+        variables=variables,
     )
 
 
@@ -402,8 +565,8 @@ def _parse_file(
 
             tasks.update(nested_tasks)
 
-    # Validate top-level keys (only imports, environments, and tasks are allowed)
-    VALID_TOP_LEVEL_KEYS = {"imports", "environments", "tasks"}
+    # Validate top-level keys (only imports, environments, tasks, and variables are allowed)
+    VALID_TOP_LEVEL_KEYS = {"imports", "environments", "tasks", "variables"}
 
     # Check if tasks key is missing when there appear to be task definitions at root
     # Do this BEFORE checking for unknown keys, to provide better error message

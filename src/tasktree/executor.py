@@ -460,20 +460,20 @@ class Executor:
             raise ExecutionError(str(e)) from e
 
     def _substitute_args(self, cmd: str, args_dict: dict[str, Any]) -> str:
-        """Substitute arguments in command string.
+        """Substitute {{ arg: name }} placeholders in command string.
+
+        Variables are already substituted at parse time by the parser.
+        This only handles runtime argument substitution.
 
         Args:
-            cmd: Command template with {{arg}} placeholders
-            args_dict: Arguments to substitute
+            cmd: Command with {{ arg: name }} placeholders
+            args_dict: Argument values to substitute
 
         Returns:
             Command with arguments substituted
         """
-        result = cmd
-        for key, value in args_dict.items():
-            placeholder = f"{{{{{key}}}}}"
-            result = result.replace(placeholder, str(value))
-        return result
+        from tasktree.substitution import substitute_arguments
+        return substitute_arguments(cmd, args_dict)
 
     def _get_all_inputs(self, task: Task) -> list[str]:
         """Get all inputs for a task (explicit + implicit from dependencies).

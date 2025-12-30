@@ -94,8 +94,8 @@ tasks:
 tasks:
   deploy:
     args: [environment]
-    outputs: ["deploy-{{environment}}.log"]
-    cmd: echo "Deployed to {{environment}}" > deploy-{{environment}}.log
+    outputs: ["deploy-{{ arg: environment }}.log"]
+    cmd: 'echo "Deployed to {{ arg: environment }}" > deploy-{{ arg: environment }}.log'
 """)
 
             original_cwd = os.getcwd()
