@@ -334,8 +334,8 @@ tasks:
     args: [environment, region=eu-west-1]
     deps: [build]
     cmd: |
-      aws s3 cp dist/app.zip s3://{{environment}}-{{region}}/
-      aws lambda update-function-code --function-name app-{{environment}}
+      aws s3 cp dist/app.zip s3://{{ arg.environment }}-{{ arg.region }}/
+      aws lambda update-function-code --function-name app-{{ arg.environment }}
 ```
 
 Invoke with: `tt deploy production` or `tt deploy staging us-east-1` or `tt deploy staging region=us-east-1`. 
@@ -506,11 +506,11 @@ tasks:
   package:
     desc: Create distribution archive
     deps: [compile]
-    outputs: [dist/app-{{version}}.tar.gz]
+    outputs: [dist/app-{{ arg.version }}.tar.gz]
     args: [version]
     cmd: |
       mkdir -p dist
-      tar czf dist/app-{{version}}.tar.gz \
+      tar czf dist/app-{{ arg.version }}.tar.gz \
         target/release/app \
         config/ \
         migrations/
@@ -520,14 +520,14 @@ tasks:
     deps: [package, docker.build-runtime]
     args: [environment, version]
     cmd: |
-      scp dist/app-{{version}}.tar.gz {{environment}}:/opt/
-      ssh {{environment}} /opt/deploy.sh {{version}}
+      scp dist/app-{{ arg.version }}.tar.gz {{ arg.environment }}:/opt/
+      ssh {{ arg.environment }} /opt/deploy.sh {{ arg.version }}
 
   integration-test:
     desc: Run integration tests against deployed environment
     deps: [deploy]
     args: [environment, version]
-    cmd: pytest tests/integration/ --env={{environment}}
+    cmd: pytest tests/integration/ --env={{ arg.environment }}
 ```
 
 Run the full pipeline:

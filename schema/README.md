@@ -99,8 +99,8 @@ tasks:
     deps: [build]
     args: [environment, region=us-west-1]
     cmd: |
-      echo "Deploying to {{environment}} in {{region}}"
-      ./deploy.sh {{environment}} {{region}}
+      echo "Deploying to {{ arg.environment }} in {{ arg.region }}"
+      ./deploy.sh {{ arg.environment }} {{ arg.region }}
 ```
 
 ## Contributing
