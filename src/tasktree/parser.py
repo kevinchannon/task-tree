@@ -298,19 +298,152 @@ def _resolve_env_variable(var_name: str, env_var_name: str) -> str:
     return value
 
 
+def _is_file_read_reference(value: Any) -> bool:
+    """Check if value is a file read reference.
+
+    Args:
+        value: Raw value from YAML
+
+    Returns:
+        True if value is { read: filepath } dict
+    """
+    return isinstance(value, dict) and "read" in value
+
+
+def _validate_file_read_reference(var_name: str, value: dict) -> str:
+    """Validate and extract filepath from file read reference.
+
+    Args:
+        var_name: Name of the variable being defined
+        value: Dict that should be { read: filepath }
+
+    Returns:
+        Filepath string
+
+    Raises:
+        ValueError: If reference is invalid
+    """
+    # Validate dict structure (only "read" key allowed)
+    if len(value) != 1:
+        extra_keys = [k for k in value.keys() if k != "read"]
+        raise ValueError(
+            f"Invalid file read reference in variable '{var_name}'.\n"
+            f"Expected: {{ read: filepath }}\n"
+            f"Found extra keys: {', '.join(extra_keys)}"
+        )
+
+    filepath = value["read"]
+
+    # Validate filepath is provided and is a string
+    if not filepath or not isinstance(filepath, str):
+        raise ValueError(
+            f"Invalid file read reference in variable '{var_name}'.\n"
+            f"Expected: {{ read: filepath }}\n"
+            f"Found: {{ read: {filepath!r} }}\n\n"
+            f"Filepath must be a non-empty string."
+        )
+
+    return filepath
+
+
+def _resolve_file_path(filepath: str, recipe_file_path: Path) -> Path:
+    """Resolve file path relative to recipe file location.
+
+    Handles three path types:
+    1. Tilde paths (~): Expand to user home directory
+    2. Absolute paths: Use as-is
+    3. Relative paths: Resolve relative to recipe file's directory
+
+    Args:
+        filepath: Path string from YAML (may be relative, absolute, or tilde)
+        recipe_file_path: Path to the recipe file containing the variable
+
+    Returns:
+        Resolved absolute Path object
+    """
+    # Expand tilde to home directory
+    if filepath.startswith("~"):
+        return Path(os.path.expanduser(filepath))
+
+    # Convert to Path for is_absolute check
+    path_obj = Path(filepath)
+
+    # Absolute paths used as-is
+    if path_obj.is_absolute():
+        return path_obj
+
+    # Relative paths resolved from recipe file's directory
+    return recipe_file_path.parent / filepath
+
+
+def _resolve_file_variable(var_name: str, filepath: str, resolved_path: Path) -> str:
+    """Read file contents for variable value.
+
+    Args:
+        var_name: Name of the variable being defined
+        filepath: Original filepath string (for error messages)
+        resolved_path: Resolved absolute path to the file
+
+    Returns:
+        File contents as string (with trailing newline stripped)
+
+    Raises:
+        ValueError: If file doesn't exist, can't be read, or contains invalid UTF-8
+    """
+    # Check file exists
+    if not resolved_path.exists():
+        raise ValueError(
+            f"Failed to read file for variable '{var_name}': {filepath}\n"
+            f"File not found: {resolved_path}\n\n"
+            f"Note: Relative paths are resolved from the recipe file location."
+        )
+
+    # Check it's a file (not directory)
+    if not resolved_path.is_file():
+        raise ValueError(
+            f"Failed to read file for variable '{var_name}': {filepath}\n"
+            f"Path is not a file: {resolved_path}"
+        )
+
+    # Read file with UTF-8 error handling
+    try:
+        content = resolved_path.read_text(encoding='utf-8')
+    except PermissionError:
+        raise ValueError(
+            f"Failed to read file for variable '{var_name}': {filepath}\n"
+            f"Permission denied: {resolved_path}\n\n"
+            f"Ensure the file is readable by the current user."
+        )
+    except UnicodeDecodeError as e:
+        raise ValueError(
+            f"Failed to read file for variable '{var_name}': {filepath}\n"
+            f"File contains invalid UTF-8 data: {resolved_path}\n\n"
+            f"The {{ read: ... }} syntax only supports text files.\n"
+            f"Error: {e}"
+        )
+
+    # Strip single trailing newline if present
+    if content.endswith('\n'):
+        content = content[:-1]
+
+    return content
+
+
 def _resolve_variable_value(
     name: str,
     raw_value: Any,
     resolved: dict[str, str],
-    resolution_stack: list[str]
+    resolution_stack: list[str],
+    file_path: Path
 ) -> str:
     """Resolve a single variable value with circular reference detection.
 
     Args:
         name: Variable name being resolved
-        raw_value: Raw value from YAML (int, str, bool, float, etc.)
+        raw_value: Raw value from YAML (int, str, bool, float, dict with env/read)
         resolved: Dictionary of already-resolved variables
         resolution_stack: Stack of variables currently being resolved (for circular detection)
+        file_path: Path to recipe file (for resolving relative file paths in { read: ... })
 
     Returns:
         Resolved string value
@@ -326,6 +459,36 @@ def _resolve_variable_value(
     resolution_stack.append(name)
 
     try:
+        # Check if this is a file read reference
+        if _is_file_read_reference(raw_value):
+            # Validate and extract filepath
+            filepath = _validate_file_read_reference(name, raw_value)
+
+            # Resolve path (handles tilde, absolute, relative)
+            resolved_path = _resolve_file_path(filepath, file_path)
+
+            # Read file contents
+            string_value = _resolve_file_variable(name, filepath, resolved_path)
+
+            # Still perform variable-in-variable substitution
+            from tasktree.substitution import substitute_variables
+            try:
+                resolved_value = substitute_variables(string_value, resolved)
+            except ValueError as e:
+                # Check if the undefined variable is in the resolution stack (circular reference)
+                error_msg = str(e)
+                if "not defined" in error_msg:
+                    match = re.search(r"Variable '(\w+)' is not defined", error_msg)
+                    if match:
+                        undefined_var = match.group(1)
+                        if undefined_var in resolution_stack:
+                            cycle = " -> ".join(resolution_stack + [undefined_var])
+                            raise ValueError(f"Circular reference detected in variables: {cycle}")
+                # Re-raise the original error if not circular
+                raise
+
+            return resolved_value
+
         # Check if this is an environment variable reference
         if _is_env_variable_reference(raw_value):
             # Validate and extract env var name
@@ -385,7 +548,7 @@ def _resolve_variable_value(
         resolution_stack.pop()
 
 
-def _parse_variables_section(data: dict) -> dict[str, str]:
+def _parse_variables_section(data: dict, file_path: Path) -> dict[str, str]:
     """Parse and resolve the variables section from YAML data.
 
     Variables are resolved in order, allowing variables to reference
@@ -393,6 +556,7 @@ def _parse_variables_section(data: dict) -> dict[str, str]:
 
     Args:
         data: Parsed YAML data (root level)
+        file_path: Path to the recipe file (for resolving relative file paths)
 
     Returns:
         Dictionary mapping variable names to resolved string values
@@ -413,7 +577,7 @@ def _parse_variables_section(data: dict) -> dict[str, str]:
     for var_name, raw_value in vars_data.items():
         _validate_variable_name(var_name)
         resolved[var_name] = _resolve_variable_value(
-            var_name, raw_value, resolved, resolution_stack
+            var_name, raw_value, resolved, resolution_stack, file_path
         )
 
     return resolved
@@ -451,7 +615,7 @@ def _parse_file_with_env(
 
         # Parse variables first (so they can be used in environment preambles and tasks)
         if data:
-            variables = _parse_variables_section(data)
+            variables = _parse_variables_section(data, file_path)
 
         # Apply variable substitution to all tasks
         if variables:

@@ -1411,5 +1411,351 @@ tasks:
                 del os.environ["REGION"]
 
 
+class TestFileReadVariables(unittest.TestCase):
+    """Test parsing of variables section with file read support."""
+
+    def test_file_read_basic(self):
+        """Test basic file reading."""
+        with TemporaryDirectory() as tmpdir:
+            # Create data file
+            data_file = Path(tmpdir) / "api-key.txt"
+            data_file.write_text("secret123\n")
+
+            # Create recipe
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  api_key: { read: api-key.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+
+            # Verify trailing newline was stripped
+            self.assertEqual(recipe.variables["api_key"], "secret123")
+
+    def test_file_read_trailing_newline_stripped(self):
+        """Test trailing newline is stripped."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "version.txt"
+            data_file.write_text("1.2.3\n")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  version: { read: version.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["version"], "1.2.3")
+
+    def test_file_read_empty_file(self):
+        """Test empty file returns empty string."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "empty.txt"
+            data_file.write_text("")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  empty: { read: empty.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["empty"], "")
+
+    def test_file_read_only_newline(self):
+        """Test file with only newline returns empty string."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "newline.txt"
+            data_file.write_text("\n")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  newline: { read: newline.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["newline"], "")
+
+    def test_file_read_preserve_internal_newlines(self):
+        """Test multi-line content preserved."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "multiline.txt"
+            data_file.write_text("line1\nline2\nline3\n")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  multiline: { read: multiline.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            # Only final newline stripped
+            self.assertEqual(recipe.variables["multiline"], "line1\nline2\nline3")
+
+    def test_file_read_preserve_leading_trailing_spaces(self):
+        """Test whitespace preserved except final newline."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "spaces.txt"
+            data_file.write_text("  value with spaces  \n")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  spaces: { read: spaces.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["spaces"], "  value with spaces  ")
+
+    def test_file_read_relative_path(self):
+        """Test relative path resolves from recipe file."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "data.txt"
+            data_file.write_text("content")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  data: { read: data.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["data"], "content")
+
+    def test_file_read_nested_relative_path(self):
+        """Test nested relative path like secrets/api-key.txt."""
+        with TemporaryDirectory() as tmpdir:
+            secrets_dir = Path(tmpdir) / "secrets"
+            secrets_dir.mkdir()
+
+            data_file = secrets_dir / "api-key.txt"
+            data_file.write_text("secret-key")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  api_key: { read: secrets/api-key.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["api_key"], "secret-key")
+
+    def test_file_read_absolute_path(self):
+        """Test absolute paths work."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "absolute.txt"
+            data_file.write_text("absolute-content")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(f"""
+variables:
+  data: {{ read: {data_file} }}
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["data"], "absolute-content")
+
+    def test_file_read_tilde_expansion(self):
+        """Test tilde expands to home directory."""
+        import os
+        home = Path.home()
+
+        with TemporaryDirectory() as tmpdir:
+            # Create a temp file in home directory
+            test_file = home / ".test-tasktree-file-read.txt"
+            try:
+                test_file.write_text("home-content")
+
+                recipe_path = Path(tmpdir) / "tasktree.yaml"
+                recipe_path.write_text("""
+variables:
+  data: { read: ~/.test-tasktree-file-read.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+                recipe = parse_recipe(recipe_path)
+                self.assertEqual(recipe.variables["data"], "home-content")
+
+            finally:
+                if test_file.exists():
+                    test_file.unlink()
+
+    def test_file_read_file_not_found(self):
+        """Test error when file doesn't exist."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  missing: { read: nonexistent.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            with self.assertRaises(ValueError) as ctx:
+                parse_recipe(recipe_path)
+
+            self.assertIn("Failed to read file", str(ctx.exception))
+            self.assertIn("nonexistent.txt", str(ctx.exception))
+            self.assertIn("File not found", str(ctx.exception))
+
+    def test_file_read_invalid_utf8(self):
+        """Test error for binary file."""
+        with TemporaryDirectory() as tmpdir:
+            # Create binary file
+            data_file = Path(tmpdir) / "binary.dat"
+            data_file.write_bytes(b'\x80\x81\x82\x83')
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  binary: { read: binary.dat }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            with self.assertRaises(ValueError) as ctx:
+                parse_recipe(recipe_path)
+
+            self.assertIn("invalid UTF-8", str(ctx.exception))
+            self.assertIn("text files", str(ctx.exception))
+
+    def test_file_read_in_variable_expansion(self):
+        """Test file content used in other variables."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "base.txt"
+            data_file.write_text("https://api.example.com")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  base_url: { read: base.txt }
+  users_endpoint: "{{ var.base_url }}/users"
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            recipe = parse_recipe(recipe_path)
+            self.assertEqual(recipe.variables["base_url"], "https://api.example.com")
+            self.assertEqual(recipe.variables["users_endpoint"], "https://api.example.com/users")
+
+    def test_file_read_invalid_syntax_extra_keys(self):
+        """Test error for extra keys in file read reference."""
+        with TemporaryDirectory() as tmpdir:
+            data_file = Path(tmpdir) / "data.txt"
+            data_file.write_text("content")
+
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  data: { read: data.txt, default: "foo" }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            with self.assertRaises(ValueError) as ctx:
+                parse_recipe(recipe_path)
+
+            self.assertIn("Invalid file read reference", str(ctx.exception))
+            self.assertIn("extra keys", str(ctx.exception).lower())
+
+    def test_file_read_invalid_syntax_empty_path(self):
+        """Test error for empty filepath."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text("""
+variables:
+  data: { read: }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            with self.assertRaises(ValueError) as ctx:
+                parse_recipe(recipe_path)
+
+            self.assertIn("Invalid file read reference", str(ctx.exception))
+            self.assertIn("non-empty string", str(ctx.exception))
+
+    def test_file_read_mixed_with_env_and_regular(self):
+        """Test all three variable types together."""
+        # Set environment variable for test
+        os.environ["TEST_ENV_VAR"] = "env-value"
+
+        try:
+            with TemporaryDirectory() as tmpdir:
+                data_file = Path(tmpdir) / "file-value.txt"
+                data_file.write_text("file-value")
+
+                recipe_path = Path(tmpdir) / "tasktree.yaml"
+                recipe_path.write_text("""
+variables:
+  regular: "regular-value"
+  from_env: { env: TEST_ENV_VAR }
+  from_file: { read: file-value.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+                recipe = parse_recipe(recipe_path)
+                self.assertEqual(recipe.variables["regular"], "regular-value")
+                self.assertEqual(recipe.variables["from_env"], "env-value")
+                self.assertEqual(recipe.variables["from_file"], "file-value")
+
+        finally:
+            del os.environ["TEST_ENV_VAR"]
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -538,6 +538,161 @@ tasks:
             finally:
                 os.chdir(original_cwd)
 
+    def test_file_read_in_command_execution(self):
+        """Test file content is actually used in task execution."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create secret file
+            secret_file = project_root / "api-key.txt"
+            secret_file.write_text("secret-api-key-123\n")
+
+            # Create recipe
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+variables:
+  api_key: { read: api-key.txt }
+
+tasks:
+  test:
+    outputs: [result.txt]
+    cmd: 'echo "Key: {{ var.api_key }}" > result.txt'
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run task
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify file content was used (newline stripped)
+                output_file = project_root / "result.txt"
+                self.assertTrue(output_file.exists())
+                content = output_file.read_text().strip()
+                self.assertEqual(content, "Key: secret-api-key-123")
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_file_read_with_variable_expansion(self):
+        """Test file contains variable references."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create file with variable reference
+            config_file = project_root / "config.txt"
+            config_file.write_text("server-{{ var.environment }}")
+
+            # Create recipe
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+variables:
+  environment: "prod"
+  server_name: { read: config.txt }
+
+tasks:
+  test:
+    outputs: [result.txt]
+    cmd: 'echo "{{ var.server_name }}" > result.txt'
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run task
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify variable expansion happened
+                output_file = project_root / "result.txt"
+                content = output_file.read_text().strip()
+                self.assertEqual(content, "server-prod")
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_file_read_and_env_combined(self):
+        """Test mix of file read and env variables in same recipe."""
+        # Set environment variable for test
+        os.environ["TEST_DEPLOY_USER"] = "admin"
+
+        try:
+            with TemporaryDirectory() as tmpdir:
+                project_root = Path(tmpdir)
+
+                # Create API key file
+                api_key_file = project_root / "api-key.txt"
+                api_key_file.write_text("secret-123")
+
+                # Create recipe
+                recipe_file = project_root / "tasktree.yaml"
+                recipe_file.write_text("""
+variables:
+  api_key: { read: api-key.txt }
+  deploy_user: { env: TEST_DEPLOY_USER }
+  regular_var: "myapp"
+
+tasks:
+  test:
+    outputs: [result.txt]
+    cmd: 'echo "{{ var.regular_var }} {{ var.api_key }} {{ var.deploy_user }}" > result.txt'
+""")
+
+                original_cwd = os.getcwd()
+                try:
+                    os.chdir(project_root)
+
+                    # Run task
+                    result = self.runner.invoke(app, ["test"], env=self.env)
+                    self.assertEqual(result.exit_code, 0)
+
+                    # Verify all three variable types work
+                    output_file = project_root / "result.txt"
+                    content = output_file.read_text().strip()
+                    self.assertEqual(content, "myapp secret-123 admin")
+
+                finally:
+                    os.chdir(original_cwd)
+
+        finally:
+            del os.environ["TEST_DEPLOY_USER"]
+
+    def test_file_read_error_not_found(self):
+        """Test missing file produces clear error."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create recipe referencing non-existent file
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+variables:
+  missing: { read: nonexistent.txt }
+
+tasks:
+  test:
+    cmd: echo test
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Should fail with clear error
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertNotEqual(result.exit_code, 0)
+
+                # Check error message
+                output = result.stdout
+                self.assertIn("Failed to read file", output)
+                self.assertIn("nonexistent.txt", output)
+                self.assertIn("File not found", output)
+
+            finally:
+                os.chdir(original_cwd)
+
 
 if __name__ == "__main__":
     unittest.main()
