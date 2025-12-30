@@ -1,11 +1,13 @@
 """Unit tests for substitution module."""
 
+import os
 import unittest
 
 from tasktree.substitution import (
     PLACEHOLDER_PATTERN,
     substitute_arguments,
     substitute_all,
+    substitute_environment,
     substitute_variables,
 )
 
@@ -26,6 +28,13 @@ class TestPlaceholderPattern(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), "arg")
         self.assertEqual(match.group(2), "bar")
+
+    def test_pattern_matches_env_prefix(self):
+        """Test pattern matches {{ env.name }} syntax."""
+        match = PLACEHOLDER_PATTERN.search("{{ env.USER }}")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group(1), "env")
+        self.assertEqual(match.group(2), "USER")
 
     def test_pattern_allows_whitespace(self):
         """Test pattern tolerates extra whitespace."""
@@ -172,6 +181,115 @@ class TestSubstituteArguments(unittest.TestCase):
         self.assertEqual(result, "value=None")
 
 
+class TestSubstituteEnvironment(unittest.TestCase):
+    """Test substitute_environment function."""
+
+    def test_substitute_single_env_var(self):
+        """Test basic {{ env.VAR }} substitution."""
+        os.environ['TEST_VAR'] = 'test_value'
+        try:
+            result = substitute_environment("Hello {{ env.TEST_VAR }}!")
+            self.assertEqual(result, "Hello test_value!")
+        finally:
+            del os.environ['TEST_VAR']
+
+    def test_substitute_multiple_env_vars(self):
+        """Test multiple different env vars in same string."""
+        os.environ['VAR1'] = 'value1'
+        os.environ['VAR2'] = 'value2'
+        try:
+            text = "{{ env.VAR1 }} and {{ env.VAR2 }}"
+            result = substitute_environment(text)
+            self.assertEqual(result, "value1 and value2")
+        finally:
+            del os.environ['VAR1']
+            del os.environ['VAR2']
+
+    def test_substitute_same_env_var_multiple_times(self):
+        """Test same env var appears multiple times."""
+        os.environ['USER'] = 'testuser'
+        try:
+            text = "{{ env.USER }} says hello to {{ env.USER }}"
+            result = substitute_environment(text)
+            self.assertEqual(result, "testuser says hello to testuser")
+        finally:
+            del os.environ['USER']
+
+    def test_substitute_no_placeholders(self):
+        """Test string without placeholders returns unchanged."""
+        text = "No placeholders here"
+        result = substitute_environment(text)
+        self.assertEqual(result, text)
+
+    def test_substitute_ignores_var_prefix(self):
+        """Test {{ var.name }} is not substituted."""
+        os.environ['FOO'] = 'env_foo'
+        try:
+            text = "{{ env.FOO }} {{ var.bar }}"
+            result = substitute_environment(text)
+            self.assertEqual(result, "env_foo {{ var.bar }}")
+        finally:
+            del os.environ['FOO']
+
+    def test_substitute_ignores_arg_prefix(self):
+        """Test {{ arg.name }} is not substituted."""
+        os.environ['FOO'] = 'env_foo'
+        try:
+            text = "{{ env.FOO }} {{ arg.bar }}"
+            result = substitute_environment(text)
+            self.assertEqual(result, "env_foo {{ arg.bar }}")
+        finally:
+            del os.environ['FOO']
+
+    def test_substitute_undefined_env_var_raises(self):
+        """Test error for undefined environment variable."""
+        # Make sure var is not set
+        if 'DEFINITELY_NOT_SET_VAR' in os.environ:
+            del os.environ['DEFINITELY_NOT_SET_VAR']
+
+        with self.assertRaises(ValueError) as cm:
+            substitute_environment("{{ env.DEFINITELY_NOT_SET_VAR }}")
+        self.assertIn("DEFINITELY_NOT_SET_VAR", str(cm.exception))
+        self.assertIn("not set", str(cm.exception))
+
+    def test_substitute_with_whitespace_variations(self):
+        """Test whitespace handling in placeholders."""
+        os.environ['TEST_VAR'] = 'value'
+        try:
+            test_cases = [
+                ("{{env.TEST_VAR}}", "value"),
+                ("{{ env.TEST_VAR }}", "value"),
+                ("{{  env  .  TEST_VAR  }}", "value"),
+            ]
+            for text, expected in test_cases:
+                with self.subTest(text=text):
+                    result = substitute_environment(text)
+                    self.assertEqual(result, expected)
+        finally:
+            del os.environ['TEST_VAR']
+
+    def test_substitute_empty_string_value(self):
+        """Test env var with empty string value."""
+        os.environ['EMPTY_VAR'] = ''
+        try:
+            result = substitute_environment("foo{{ env.EMPTY_VAR }}bar")
+            self.assertEqual(result, "foobar")
+        finally:
+            del os.environ['EMPTY_VAR']
+
+    def test_substitute_in_complex_command(self):
+        """Test substitution in realistic command string."""
+        os.environ['DEPLOY_USER'] = 'admin'
+        os.environ['DEPLOY_HOST'] = 'prod.example.com'
+        try:
+            text = 'scp package.tar.gz {{ env.DEPLOY_USER }}@{{ env.DEPLOY_HOST }}:/opt/'
+            result = substitute_environment(text)
+            self.assertEqual(result, 'scp package.tar.gz admin@prod.example.com:/opt/')
+        finally:
+            del os.environ['DEPLOY_USER']
+            del os.environ['DEPLOY_HOST']
+
+
 class TestSubstituteAll(unittest.TestCase):
     """Test substitute_all function."""
 
@@ -205,6 +323,31 @@ class TestSubstituteAll(unittest.TestCase):
         text = "No placeholders"
         result = substitute_all(text, {}, {})
         self.assertEqual(result, text)
+
+    def test_substitute_all_three_types(self):
+        """Test variables, arguments, and environment all work together."""
+        os.environ['ENV_VAR'] = 'from_env'
+        try:
+            text = "{{ var.v }} {{ arg.a }} {{ env.ENV_VAR }}"
+            variables = {"v": "from_var"}
+            args = {"a": "from_arg"}
+            result = substitute_all(text, variables, args)
+            self.assertEqual(result, "from_var from_arg from_env")
+        finally:
+            del os.environ['ENV_VAR']
+
+    def test_substitute_order_var_then_arg_then_env(self):
+        """Test substitution happens in correct order."""
+        os.environ['PORT'] = '9000'
+        try:
+            # Variable contains arg placeholder, which contains env placeholder
+            text = "{{ var.template }}"
+            variables = {"template": "server={{ arg.server }}"}
+            args = {"server": "host:{{ env.PORT }}"}
+            result = substitute_all(text, variables, args)
+            self.assertEqual(result, "server=host:9000")
+        finally:
+            del os.environ['PORT']
 
 
 if __name__ == "__main__":

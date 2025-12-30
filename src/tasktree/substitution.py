@@ -1,7 +1,7 @@
-"""Placeholder substitution for variables and arguments.
+"""Placeholder substitution for variables, arguments, and environment variables.
 
-This module provides functions to substitute {{ var.name }} and {{ arg.name }}
-placeholders with their corresponding values.
+This module provides functions to substitute {{ var.name }}, {{ arg.name }},
+and {{ env.NAME }} placeholders with their corresponding values.
 """
 
 import re
@@ -9,9 +9,9 @@ from typing import Any
 
 
 # Pattern matches: {{ prefix.name }} with optional whitespace
-# Groups: (1) prefix (var|arg), (2) name (identifier)
+# Groups: (1) prefix (var|arg|env), (2) name (identifier)
 PLACEHOLDER_PATTERN = re.compile(
-    r'\{\{\s*(var|arg)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
+    r'\{\{\s*(var|arg|env)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
 )
 
 
@@ -80,10 +80,51 @@ def substitute_arguments(text: str, args: dict[str, Any]) -> str:
     return PLACEHOLDER_PATTERN.sub(replace_match, text)
 
 
-def substitute_all(text: str, variables: dict[str, str], args: dict[str, Any]) -> str:
-    """Substitute both {{ var.name }} and {{ arg.name }} placeholders.
+def substitute_environment(text: str) -> str:
+    """Substitute {{ env.NAME }} placeholders with environment variable values.
 
-    Variables are substituted first, then arguments.
+    Environment variables are read from os.environ at substitution time.
+
+    Args:
+        text: Text containing {{ env.NAME }} placeholders
+
+    Returns:
+        Text with all {{ env.NAME }} placeholders replaced
+
+    Raises:
+        ValueError: If a referenced environment variable is not set
+
+    Example:
+        >>> os.environ['USER'] = 'alice'
+        >>> substitute_environment("Hello {{ env.USER }}")
+        'Hello alice'
+    """
+    import os
+
+    def replace_match(match: re.Match) -> str:
+        prefix = match.group(1)
+        name = match.group(2)
+
+        # Only substitute env: placeholders
+        if prefix != "env":
+            return match.group(0)  # Return unchanged
+
+        value = os.environ.get(name)
+        if value is None:
+            raise ValueError(
+                f"Environment variable '{name}' is not set"
+            )
+
+        return value
+
+    return PLACEHOLDER_PATTERN.sub(replace_match, text)
+
+
+def substitute_all(text: str, variables: dict[str, str], args: dict[str, Any]) -> str:
+    """Substitute all placeholder types: variables, arguments, environment.
+
+    Substitution order: variables → arguments → environment.
+    This allows variables to contain arg/env placeholders.
 
     Args:
         text: Text containing placeholders
@@ -94,8 +135,9 @@ def substitute_all(text: str, variables: dict[str, str], args: dict[str, Any]) -
         Text with all placeholders replaced
 
     Raises:
-        ValueError: If any referenced variable or argument is not defined
+        ValueError: If any referenced variable, argument, or environment variable is not defined
     """
     text = substitute_variables(text, variables)
     text = substitute_arguments(text, args)
+    text = substitute_environment(text)
     return text

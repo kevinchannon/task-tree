@@ -413,6 +413,131 @@ tasks:
             finally:
                 os.chdir(original_cwd)
 
+    def test_environment_variable_substitution_in_command(self):
+        """Test {{ env.VAR }} substitution works in actual execution."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+tasks:
+  test:
+    outputs: [output.txt]
+    cmd: echo "User is {{ env.USER }}" > output.txt
+""")
+
+            # Set test env var
+            test_env = {"NO_COLOR": "1", "USER": "testuser"}
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                # Run task
+                result = self.runner.invoke(app, ["test"], env=test_env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify output contains substituted env var
+                output_file = project_root / "output.txt"
+                self.assertTrue(output_file.exists())
+                content = output_file.read_text().strip()
+                self.assertEqual(content, "User is testuser")
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_mixed_substitution_var_arg_env(self):
+        """Test all three substitution types work together."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+variables:
+  server: "prod.example.com"
+
+tasks:
+  deploy:
+    args: [app_name]
+    outputs: ["deploy.log"]
+    cmd: echo "Deploy {{ arg.app_name }} to {{ var.server }} as {{ env.USER }}" > deploy.log
+""")
+
+            test_env = {"NO_COLOR": "1", "USER": "admin"}
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                result = self.runner.invoke(app, ["deploy", "myapp"], env=test_env)
+                self.assertEqual(result.exit_code, 0)
+
+                output_file = project_root / "deploy.log"
+                self.assertTrue(output_file.exists())
+                content = output_file.read_text().strip()
+                self.assertEqual(content, "Deploy myapp to prod.example.com as admin")
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_undefined_env_var_error(self):
+        """Test clear error when environment variable is not set."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+tasks:
+  test:
+    cmd: echo "{{ env.UNDEFINED_VAR_XYZ }}"
+""")
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                result = self.runner.invoke(app, ["test"], env=self.env)
+                self.assertNotEqual(result.exit_code, 0)
+                self.assertIn("UNDEFINED_VAR_XYZ", result.output)
+                self.assertIn("not set", result.output)
+
+            finally:
+                os.chdir(original_cwd)
+
+    def test_env_substitution_in_working_dir(self):
+        """Test environment variable substitution works in working_dir."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+
+            # Create subdirectory with env-based name
+            subdir = project_root / "testdir"
+            subdir.mkdir()
+
+            recipe_file = project_root / "tasktree.yaml"
+            recipe_file.write_text("""
+tasks:
+  test:
+    working_dir: "{{ env.TEST_DIR }}"
+    outputs: [output.txt]
+    cmd: echo "In subdir" > output.txt
+""")
+
+            test_env = {"NO_COLOR": "1", "TEST_DIR": "testdir"}
+
+            original_cwd = os.getcwd()
+            try:
+                os.chdir(project_root)
+
+                result = self.runner.invoke(app, ["test"], env=test_env)
+                self.assertEqual(result.exit_code, 0)
+
+                # Verify file was created in subdirectory
+                output_file = subdir / "output.txt"
+                self.assertTrue(output_file.exists())
+
+            finally:
+                os.chdir(original_cwd)
+
 
 if __name__ == "__main__":
     unittest.main()

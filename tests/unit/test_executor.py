@@ -1,5 +1,6 @@
 """Tests for executor module."""
 
+import os
 import time
 import unittest
 from pathlib import Path
@@ -953,6 +954,87 @@ class TestEnvironmentResolution(unittest.TestCase):
         self.assertNotEqual(hash1, hash2)
         self.assertNotEqual(hash2, hash3)
         self.assertNotEqual(hash1, hash3)
+
+    @patch("subprocess.run")
+    def test_run_task_substitutes_environment_variables(self, mock_run):
+        """Test that _run_task substitutes environment variables."""
+        os.environ['TEST_ENV_VAR'] = 'test_value'
+        try:
+            with TemporaryDirectory() as tmpdir:
+                project_root = Path(tmpdir)
+                state_manager = StateManager(project_root)
+
+                # Create task with env placeholder
+                tasks = {"test": Task(
+                    name="test",
+                    cmd="echo {{ env.TEST_ENV_VAR }}",
+                    working_dir=".",
+                )}
+                recipe = Recipe(tasks=tasks, project_root=project_root)
+                executor = Executor(recipe, state_manager)
+
+                mock_run.return_value = MagicMock(returncode=0)
+                executor._run_task(tasks["test"], {})
+
+                # Verify command has env var substituted
+                called_cmd = mock_run.call_args[0][0]
+                self.assertIn('test_value', ' '.join(called_cmd))
+                self.assertNotIn('{{ env.TEST_ENV_VAR }}', ' '.join(called_cmd))
+        finally:
+            del os.environ['TEST_ENV_VAR']
+
+    @patch("subprocess.run")
+    def test_run_task_env_substitution_in_working_dir(self, mock_run):
+        """Test environment variables work in working_dir."""
+        os.environ['SUBDIR'] = 'mydir'
+        try:
+            with TemporaryDirectory() as tmpdir:
+                project_root = Path(tmpdir)
+                state_manager = StateManager(project_root)
+
+                # Create subdirectory
+                (project_root / 'mydir').mkdir()
+
+                tasks = {"test": Task(
+                    name="test",
+                    cmd="echo test",
+                    working_dir="{{ env.SUBDIR }}",
+                )}
+                recipe = Recipe(tasks=tasks, project_root=project_root)
+                executor = Executor(recipe, state_manager)
+
+                mock_run.return_value = MagicMock(returncode=0)
+                executor._run_task(tasks["test"], {})
+
+                # Verify working_dir was substituted
+                called_cwd = mock_run.call_args[1]['cwd']
+                self.assertEqual(called_cwd, project_root / 'mydir')
+        finally:
+            del os.environ['SUBDIR']
+
+    def test_run_task_undefined_env_var_raises(self):
+        """Test undefined environment variable raises clear error."""
+        # Ensure var is not set
+        if 'UNDEFINED_TEST_VAR' in os.environ:
+            del os.environ['UNDEFINED_TEST_VAR']
+
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir)
+            state_manager = StateManager(project_root)
+
+            tasks = {"test": Task(
+                name="test",
+                cmd="echo {{ env.UNDEFINED_TEST_VAR }}",
+                working_dir=".",
+            )}
+            recipe = Recipe(tasks=tasks, project_root=project_root)
+            executor = Executor(recipe, state_manager)
+
+            with self.assertRaises(ValueError) as cm:
+                executor._run_task(tasks["test"], {})
+
+            self.assertIn("UNDEFINED_TEST_VAR", str(cm.exception))
+            self.assertIn("not set", str(cm.exception))
 
 
 if __name__ == "__main__":

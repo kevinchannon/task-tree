@@ -356,6 +356,106 @@ Arguments may be typed, or not and have a default, or not. Valid argument types 
 
 Different argument values are tracked separately—tasks re-run when invoked with new arguments.
 
+## Environment Variables
+
+Task Tree supports reading environment variables in two ways:
+
+### Direct Substitution
+
+Reference environment variables directly in task commands using `{{ env.VAR_NAME }}`:
+
+```yaml
+tasks:
+  deploy:
+    args: [target]
+    cmd: |
+      echo "Deploying to {{ arg.target }}"
+      echo "User: {{ env.USER }}"
+      scp package.tar.gz {{ env.DEPLOY_USER }}@{{ arg.target }}:/opt/
+```
+
+```bash
+export DEPLOY_USER=admin
+tt deploy production
+```
+
+Environment variables are resolved at execution time, just before the task runs.
+
+### Via Variables Section
+
+For more complex scenarios, define environment variables in the `variables` section:
+
+```yaml
+variables:
+  # Direct env reference (resolved at parse time)
+  api_key: { env: API_KEY }
+  db_host: { env: DATABASE_HOST }
+
+  # Or using string substitution
+  deploy_user: "{{ env.DEPLOY_USER }}"
+
+  # Compose with other variables
+  connection: "{{ var.db_host }}:5432"
+  api_url: "https://{{ var.db_host }}/api"
+
+tasks:
+  deploy:
+    cmd: |
+      curl -H "Authorization: Bearer {{ var.api_key }}" {{ var.api_url }}
+      ssh {{ var.deploy_user }}@{{ var.db_host }} /opt/deploy.sh
+```
+
+**Key differences:**
+- **`{ env: VAR }`** — Resolved at parse time (when `tt` starts)
+- **`"{{ env.VAR }}"`** — Resolved at parse time in variables, execution time in tasks
+- **Direct `{{ env.VAR }}`** — Resolved at execution time
+
+### When to Use Which
+
+**Use direct substitution** (`{{ env.VAR }}`) when:
+- You need simple, one-off environment variable references
+- The value is used in a single place
+- You want the value resolved at execution time
+
+**Use variables section** when:
+- You need to compose values from multiple sources
+- The same value is used in multiple places
+- You need variable-in-variable expansion
+
+**Examples:**
+
+```yaml
+variables:
+  # Compose configuration from environment
+  home: { env: HOME }
+  config_dir: "{{ var.home }}/.myapp"
+
+tasks:
+  # Direct reference for simple cases
+  show-user:
+    cmd: echo "Running as {{ env.USER }}"
+
+  # Mixed usage
+  deploy:
+    args: [app]
+    cmd: |
+      echo "Config: {{ var.config_dir }}"
+      echo "Deploying {{ arg.app }} as {{ env.DEPLOY_USER }}"
+```
+
+**Environment variable values are always strings**, even if they look like numbers.
+
+### Working Directory
+
+Environment variables work in `working_dir` as well:
+
+```yaml
+tasks:
+  build:
+    working_dir: "{{ env.BUILD_DIR }}"
+    cmd: make all
+```
+
 ## File Imports
 
 Split task definitions across multiple files for better organisation:
@@ -520,8 +620,8 @@ tasks:
     deps: [package, docker.build-runtime]
     args: [environment, version]
     cmd: |
-      scp dist/app-{{ arg.version }}.tar.gz {{ arg.environment }}:/opt/
-      ssh {{ arg.environment }} /opt/deploy.sh {{ arg.version }}
+      scp dist/app-{{ arg.version }}.tar.gz {{ env.DEPLOY_USER }}@{{ arg.environment }}:/opt/
+      ssh {{ env.DEPLOY_USER }}@{{ arg.environment }} /opt/deploy.sh {{ arg.version }}
 
   integration-test:
     desc: Run integration tests against deployed environment
@@ -533,6 +633,7 @@ tasks:
 Run the full pipeline:
 
 ```bash
+export DEPLOY_USER=admin
 tt integration-test staging version=1.2.3
 ```
 

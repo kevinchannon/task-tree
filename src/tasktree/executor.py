@@ -301,11 +301,14 @@ class Executor:
         Raises:
             ExecutionError: If task execution fails
         """
-        # Substitute arguments in command
+        # Substitute arguments and environment variables in command
         cmd = self._substitute_args(task.cmd, args_dict)
+        cmd = self._substitute_env(cmd)
 
-        # Determine working directory
-        working_dir = self.recipe.project_root / task.working_dir
+        # Substitute in working_dir as well
+        working_dir_str = self._substitute_args(task.working_dir, args_dict)
+        working_dir_str = self._substitute_env(working_dir_str)
+        working_dir = self.recipe.project_root / working_dir_str
 
         # Check if task uses Docker environment
         env_name = self._get_effective_env_name(task)
@@ -474,6 +477,23 @@ class Executor:
         """
         from tasktree.substitution import substitute_arguments
         return substitute_arguments(cmd, args_dict)
+
+    def _substitute_env(self, text: str) -> str:
+        """Substitute {{ env.NAME }} placeholders in text.
+
+        Environment variables are resolved at execution time from os.environ.
+
+        Args:
+            text: Text with {{ env.NAME }} placeholders
+
+        Returns:
+            Text with environment variables substituted
+
+        Raises:
+            ValueError: If environment variable is not set
+        """
+        from tasktree.substitution import substitute_environment
+        return substitute_environment(text)
 
     def _get_all_inputs(self, task: Task) -> list[str]:
         """Get all inputs for a task (explicit + implicit from dependencies).
