@@ -272,6 +272,150 @@ class TestDockerManager(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.manager._resolve_volume_mount("invalid-no-colon")
 
+    @patch("tasktree.docker.platform.system")
+    def test_should_add_user_flag_linux(self, mock_platform):
+        """Test that user flag is added on Linux."""
+        mock_platform.return_value = "Linux"
+        self.assertTrue(self.manager._should_add_user_flag())
+
+    @patch("tasktree.docker.platform.system")
+    def test_should_add_user_flag_darwin(self, mock_platform):
+        """Test that user flag is added on macOS."""
+        mock_platform.return_value = "Darwin"
+        self.assertTrue(self.manager._should_add_user_flag())
+
+    @patch("tasktree.docker.platform.system")
+    def test_should_add_user_flag_windows(self, mock_platform):
+        """Test that user flag is NOT added on Windows."""
+        mock_platform.return_value = "Windows"
+        self.assertFalse(self.manager._should_add_user_flag())
+
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    @patch("tasktree.docker.os.getuid")
+    @patch("tasktree.docker.os.getgid")
+    def test_run_in_container_adds_user_flag_by_default(
+        self, mock_getgid, mock_getuid, mock_platform, mock_run
+    ):
+        """Test that --user flag is added by default on Linux."""
+        mock_platform.return_value = "Linux"
+        mock_getuid.return_value = 1000
+        mock_getgid.return_value = 1000
+
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Find the docker run call (should be the 4th call: docker --version, build, inspect, run)
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Verify --user flag is present
+        self.assertIn("--user", run_call_args)
+        user_flag_index = run_call_args.index("--user")
+        self.assertEqual(run_call_args[user_flag_index + 1], "1000:1000")
+
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    def test_run_in_container_skips_user_flag_on_windows(self, mock_platform, mock_run):
+        """Test that --user flag is NOT added on Windows."""
+        mock_platform.return_value = "Windows"
+
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Find the docker run call (should be the 4th call)
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Verify --user flag is NOT present
+        self.assertNotIn("--user", run_call_args)
+
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    @patch("tasktree.docker.os.getuid")
+    @patch("tasktree.docker.os.getgid")
+    def test_run_in_container_respects_run_as_root_flag(
+        self, mock_getgid, mock_getuid, mock_platform, mock_run
+    ):
+        """Test that run_as_root=True prevents --user flag from being added."""
+        mock_platform.return_value = "Linux"
+        mock_getuid.return_value = 1000
+        mock_getgid.return_value = 1000
+
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+            run_as_root=True,  # Explicitly request root
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Find the docker run call (should be the 4th call)
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Verify --user flag is NOT present when run_as_root=True
+        self.assertNotIn("--user", run_call_args)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -37,6 +37,7 @@ class Environment:
     env_vars: dict[str, str] = field(default_factory=dict)  # Environment variables
     working_dir: str = ""  # Working directory (container or host)
     extra_args: List[str] = field(default_factory=list) # Any extra arguments to pass to docker
+    run_as_root: bool = False  # If True, skip user mapping (run as root in container)
 
     def __post_init__(self):
         """Ensure args is always a list."""
@@ -664,6 +665,7 @@ def _parse_file_with_env(
                     ports = env_config.get("ports", [])
                     env_vars = env_config.get("env_vars", {})
                     extra_args = env_config.get("extra_args", [])
+                    run_as_root = env_config.get("run_as_root", False)
 
                     # Validate environment type
                     if not shell and not dockerfile:
@@ -717,7 +719,8 @@ def _parse_file_with_env(
                         ports=ports,
                         env_vars=env_vars,
                         working_dir=working_dir,
-                        extra_args=extra_args
+                        extra_args=extra_args,
+                        run_as_root=run_as_root
                     )
 
     return tasks, environments, default_env, variables

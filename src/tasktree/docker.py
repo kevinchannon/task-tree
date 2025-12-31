@@ -6,6 +6,7 @@ Provides Docker image building and container execution capabilities.
 from __future__ import annotations
 
 import os
+import platform
 import re
 import subprocess
 import time
@@ -38,6 +39,22 @@ class DockerManager:
         """
         self._project_root = project_root
         self._built_images: dict[str, tuple[str, str]] = {}  # env_name -> (image_tag, image_id) cache
+
+    def _should_add_user_flag(self) -> bool:
+        """Check if --user flag should be added to docker run.
+
+        Returns False on Windows (where Docker Desktop handles UID mapping automatically).
+        Returns True on Linux/macOS where os.getuid() and os.getgid() are available.
+
+        Returns:
+            True if --user flag should be added, False otherwise
+        """
+        # Skip on Windows - Docker Desktop handles UID mapping differently
+        if platform.system() == "Windows":
+            return False
+
+        # Check if os.getuid() and os.getgid() are available (Linux/macOS)
+        return hasattr(os, "getuid") and hasattr(os, "getgid")
 
     def ensure_image_built(self, env: Environment) -> tuple[str, str]:
         """Build Docker image if not already built this invocation.
@@ -126,6 +143,13 @@ class DockerManager:
 
         # Build docker run command
         docker_cmd = ["docker", "run", "--rm"]
+
+        # Add user mapping (run as current host user) unless explicitly disabled or on Windows
+        if not env.run_as_root and self._should_add_user_flag():
+            uid = os.getuid()
+            gid = os.getgid()
+            docker_cmd.extend(["--user", f"{uid}:{gid}"])
+
         docker_cmd.extend(env.extra_args)
 
         # Add volume mounts

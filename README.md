@@ -324,6 +324,50 @@ tasks:
 - **Unix/macOS**: bash with `-c` args
 - **Windows**: cmd with `/c` args
 
+### Docker Environments
+
+Execute tasks inside Docker containers for reproducible builds and isolated execution:
+
+```yaml
+environments:
+  builder:
+    dockerfile: build.dockerfile
+    context: .
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+
+tasks:
+  build:
+    env: builder
+    cmd: cargo build --release
+```
+
+#### User Mapping
+
+By default, tasks run inside Docker containers execute as your current host user (UID:GID) rather than root. This ensures files created in mounted volumes have correct ownership on the host filesystem.
+
+To run as root inside the container (e.g., for package installation or privileged operations), set `run_as_root: true`:
+
+```yaml
+environments:
+  privileged:
+    dockerfile: admin.dockerfile
+    context: .
+    run_as_root: true
+    volumes:
+      - .:/workspace
+```
+
+**Note**: On Windows, user mapping is handled automatically by Docker Desktop and this setting has no effect.
+
+#### Use Cases for `run_as_root: true`
+
+You may need to set `run_as_root: true` when:
+- Container process needs to bind to privileged ports (<1024)
+- Installing packages during task execution
+- Software explicitly requires root privileges
+
 ### Parameterised Tasks
 
 Tasks can accept arguments with optional defaults:
