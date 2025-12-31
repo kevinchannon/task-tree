@@ -1142,7 +1142,6 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
         task_name: Name of the task (for warning message)
     """
     import sys
-    import warnings
 
     # Parse all exported arg names
     exported_names = []

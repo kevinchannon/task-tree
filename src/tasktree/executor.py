@@ -41,6 +41,18 @@ class ExecutionError(Exception):
 class Executor:
     """Executes tasks with incremental execution logic."""
 
+    # Protected environment variables that cannot be overridden by exported args
+    PROTECTED_ENV_VARS = {
+        'PATH',
+        'LD_LIBRARY_PATH',
+        'LD_PRELOAD',
+        'PYTHONPATH',
+        'HOME',
+        'SHELL',
+        'USER',
+        'LOGNAME',
+    }
+
     def __init__(self, recipe: Recipe, state_manager: StateManager):
         """Initialize executor.
 
@@ -51,6 +63,30 @@ class Executor:
         self.recipe = recipe
         self.state = state_manager
         self.docker_manager = docker_module.DockerManager(recipe.project_root)
+
+    def _prepare_env_with_exports(self, exported_env_vars: dict[str, str] | None = None) -> dict[str, str]:
+        """Prepare environment with exported arguments.
+
+        Args:
+            exported_env_vars: Exported arguments to set as environment variables
+
+        Returns:
+            Environment dict with exported args merged
+
+        Raises:
+            ValueError: If an exported arg attempts to override a protected environment variable
+        """
+        env = os.environ.copy()
+        if exported_env_vars:
+            # Check for protected environment variable overrides
+            for key in exported_env_vars:
+                if key in self.PROTECTED_ENV_VARS:
+                    raise ValueError(
+                        f"Cannot override protected environment variable: {key}\n"
+                        f"Protected variables are: {', '.join(sorted(self.PROTECTED_ENV_VARS))}"
+                    )
+            env.update(exported_env_vars)
+        return env
 
     def _get_platform_default_environment(self) -> tuple[str, list[str]]:
         """Get default shell and args for current platform.
@@ -373,9 +409,7 @@ class Executor:
             ExecutionError: If command execution fails
         """
         # Prepare environment with exported args
-        env = os.environ.copy()
-        if exported_env_vars:
-            env.update(exported_env_vars)
+        env = self._prepare_env_with_exports(exported_env_vars)
 
         try:
             # Build command: shell + args + cmd
@@ -410,9 +444,7 @@ class Executor:
             ExecutionError: If command execution fails
         """
         # Prepare environment with exported args
-        env = os.environ.copy()
-        if exported_env_vars:
-            env.update(exported_env_vars)
+        env = self._prepare_env_with_exports(exported_env_vars)
 
         # Determine file extension based on platform
         is_windows = platform.system() == "Windows"
@@ -488,9 +520,16 @@ class Executor:
             env.working_dir, task.working_dir
         )
 
-        # Merge exported args with env vars (exported args take precedence)
+        # Validate and merge exported args with env vars (exported args take precedence)
         docker_env_vars = env.env_vars.copy() if env.env_vars else {}
         if exported_env_vars:
+            # Check for protected environment variable overrides
+            for key in exported_env_vars:
+                if key in self.PROTECTED_ENV_VARS:
+                    raise ValueError(
+                        f"Cannot override protected environment variable: {key}\n"
+                        f"Protected variables are: {', '.join(sorted(self.PROTECTED_ENV_VARS))}"
+                    )
             docker_env_vars.update(exported_env_vars)
 
         # Create modified environment with merged env vars using dataclass replace

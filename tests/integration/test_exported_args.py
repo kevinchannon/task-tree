@@ -328,5 +328,32 @@ tasks:
                 os.environ["MY_VAR"] = original_value
 
 
+    def test_protected_env_var_override_fails(self):
+        """Test that attempting to override protected environment variables fails."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  test:
+    args: [$PATH]
+    cmd: echo "Should not execute"
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            state = StateManager(recipe.project_root)
+            state.load()
+            executor = Executor(recipe, state)
+
+            # Should raise ValueError when trying to override PATH
+            args_dict = {"PATH": "/malicious/path"}
+            with self.assertRaises(ValueError) as cm:
+                executor.execute_task("test", args_dict)
+
+            self.assertIn("protected", str(cm.exception).lower())
+            self.assertIn("PATH", str(cm.exception))
+
+
 if __name__ == "__main__":
     unittest.main()
