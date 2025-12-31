@@ -375,8 +375,8 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
 
     parsed_specs = []
     for spec in arg_specs:
-        name, arg_type, default = parse_arg_spec(spec)
-        parsed_specs.append((name, arg_type, default))
+        name, arg_type, default, is_exported = parse_arg_spec(spec)
+        parsed_specs.append((name, arg_type, default, is_exported))
 
     args_dict = {}
     positional_index = 0
@@ -390,17 +390,17 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
             if spec is None:
                 console.print(f"[red]Unknown argument: {arg_name}[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default = spec
+            name, arg_type, default, is_exported = spec
         else:
             # Positional argument
             if positional_index >= len(parsed_specs):
                 console.print(f"[red]Too many arguments[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default = parsed_specs[positional_index]
+            name, arg_type, default, is_exported = parsed_specs[positional_index]
             arg_value = value_str
             positional_index += 1
 
-        # Convert value to appropriate type
+        # Convert value to appropriate type (exported args are always strings)
         try:
             click_type = get_click_type(arg_type)
             converted_value = click_type.convert(arg_value, None, None)
@@ -410,7 +410,7 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
             raise typer.Exit(1)
 
     # Fill in defaults for missing arguments
-    for name, arg_type, default in parsed_specs:
+    for name, arg_type, default, is_exported in parsed_specs:
         if name not in args_dict:
             if default is not None:
                 try:

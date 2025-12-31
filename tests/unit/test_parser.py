@@ -20,31 +20,77 @@ from tasktree.parser import (
 class TestParseArgSpec(unittest.TestCase):
     def test_parse_simple_arg(self):
         """Test parsing a simple argument name."""
-        name, arg_type, default = parse_arg_spec("environment")
+        name, arg_type, default, is_exported = parse_arg_spec("environment")
         self.assertEqual(name, "environment")
         self.assertEqual(arg_type, "str")
         self.assertIsNone(default)
+        self.assertFalse(is_exported)
 
     def test_parse_arg_with_default(self):
         """Test parsing argument with default value."""
-        name, arg_type, default = parse_arg_spec("region=eu-west-1")
+        name, arg_type, default, is_exported = parse_arg_spec("region=eu-west-1")
         self.assertEqual(name, "region")
         self.assertEqual(arg_type, "str")
         self.assertEqual(default, "eu-west-1")
+        self.assertFalse(is_exported)
 
     def test_parse_arg_with_type(self):
         """Test parsing argument with type."""
-        name, arg_type, default = parse_arg_spec("port:int")
+        name, arg_type, default, is_exported = parse_arg_spec("port:int")
         self.assertEqual(name, "port")
         self.assertEqual(arg_type, "int")
         self.assertIsNone(default)
+        self.assertFalse(is_exported)
 
     def test_parse_arg_with_type_and_default(self):
         """Test parsing argument with type and default."""
-        name, arg_type, default = parse_arg_spec("port:int=8080")
+        name, arg_type, default, is_exported = parse_arg_spec("port:int=8080")
         self.assertEqual(name, "port")
         self.assertEqual(arg_type, "int")
         self.assertEqual(default, "8080")
+        self.assertFalse(is_exported)
+
+    def test_parse_exported_arg(self):
+        """Test parsing exported argument ($ prefix)."""
+        name, arg_type, default, is_exported = parse_arg_spec("$server")
+        self.assertEqual(name, "server")
+        self.assertEqual(arg_type, "str")
+        self.assertIsNone(default)
+        self.assertTrue(is_exported)
+
+    def test_parse_exported_arg_with_default(self):
+        """Test parsing exported argument with default value."""
+        name, arg_type, default, is_exported = parse_arg_spec("$user=admin")
+        self.assertEqual(name, "user")
+        self.assertEqual(arg_type, "str")
+        self.assertEqual(default, "admin")
+        self.assertTrue(is_exported)
+
+    def test_parse_exported_arg_with_type_raises_error(self):
+        """Test that exported arguments with type annotations raise error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("$server:str")
+        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
+        self.assertIn("$server:str", str(context.exception))
+
+    def test_parse_exported_arg_with_type_and_default_raises_error(self):
+        """Test that exported arguments with type and default raise error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("$port:int=8080")
+        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
+
+    def test_yaml_parses_dollar_prefix_as_literal(self):
+        """Test that PyYAML correctly parses $ prefix as literal text."""
+        yaml_text = """
+args:
+  - $server
+  - $user=admin
+  - port:int=8080
+"""
+        data = yaml.safe_load(yaml_text)
+        self.assertEqual(data["args"][0], "$server")
+        self.assertEqual(data["args"][1], "$user=admin")
+        self.assertEqual(data["args"][2], "port:int=8080")
 
 
 class TestParseRecipe(unittest.TestCase):

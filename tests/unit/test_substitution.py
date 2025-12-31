@@ -180,6 +180,40 @@ class TestSubstituteArguments(unittest.TestCase):
         result = substitute_arguments("value={{ arg.x }}", {"x": None})
         self.assertEqual(result, "value=None")
 
+    def test_exported_arg_raises_error_when_used_in_template(self):
+        """Test that exported arguments cannot be used in template substitution."""
+        exported_args = {"server"}
+        args = {"port": 8080}  # Only non-exported args
+
+        with self.assertRaises(ValueError) as cm:
+            substitute_arguments("{{ arg.server }}", args, exported_args)
+
+        self.assertIn("server", str(cm.exception))
+        self.assertIn("exported", str(cm.exception))
+        self.assertIn("$server", str(cm.exception))
+        self.assertIn("environment variable", str(cm.exception))
+
+    def test_regular_arg_works_with_exported_args_set(self):
+        """Test that regular args still work when exported_args is provided."""
+        exported_args = {"server"}
+        args = {"port": 8080}
+
+        result = substitute_arguments("port={{ arg.port }}", args, exported_args)
+        self.assertEqual(result, "port=8080")
+
+    def test_mixed_exported_and_regular_args(self):
+        """Test mixing exported and regular args in substitution."""
+        exported_args = {"server", "user"}
+        args = {"port": 8080, "verbose": True}
+
+        text = "port={{ arg.port }} debug={{ arg.verbose }}"
+        result = substitute_arguments(text, args, exported_args)
+        self.assertEqual(result, "port=8080 debug=True")
+
+        # Exported arg should fail
+        with self.assertRaises(ValueError):
+            substitute_arguments("{{ arg.server }}", args, exported_args)
+
 
 class TestSubstituteEnvironment(unittest.TestCase):
     """Test substitute_environment function."""

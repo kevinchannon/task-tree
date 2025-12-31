@@ -382,7 +382,7 @@ tasks:
       aws lambda update-function-code --function-name app-{{ arg.environment }}
 ```
 
-Invoke with: `tt deploy production` or `tt deploy staging us-east-1` or `tt deploy staging region=us-east-1`. 
+Invoke with: `tt deploy production` or `tt deploy staging us-east-1` or `tt deploy staging region=us-east-1`.
 
 Arguments may be typed, or not and have a default, or not. Valid argument types are:
 
@@ -399,6 +399,123 @@ Arguments may be typed, or not and have a default, or not. Valid argument types 
 * hostname - looks like a hostname, resolution of the name is not attempted as part of the validation
 
 Different argument values are tracked separately—tasks re-run when invoked with new arguments.
+
+### Exported Arguments
+
+Arguments can be prefixed with `$` to export them as environment variables instead of using template substitution. This mimics Justfile behavior and is cleaner for shell-heavy commands:
+
+```yaml
+tasks:
+  deploy:
+    args: [$server, $user=admin, port=8080]
+    cmd: |
+      echo "Deploying to $server as $user on port {{ arg.port }}"
+      ssh $user@$server "systemctl restart app --port {{ arg.port }}"
+```
+
+**Key differences between regular and exported arguments:**
+
+| Feature | Regular Argument | Exported Argument |
+|---------|-----------------|-------------------|
+| **Syntax** | `args: [name]` | `args: [$name]` |
+| **Usage in commands** | `{{ arg.name }}` | `$name` (shell variable) |
+| **Type annotations** | Allowed: `port:int` | **Not allowed** (always strings) |
+| **Defaults** | `port=8080` | `$port=8080` |
+| **Availability** | Template substitution only | Environment variable (all subprocesses) |
+| **Case handling** | N/A | Preserves exact case as written |
+
+**Invocation examples:**
+
+```bash
+# Positional arguments (exported and regular mixed)
+tt deploy prod-server admin port=9000
+
+# Named arguments
+tt deploy server=prod-server user=admin port=9000
+
+# Using defaults
+tt deploy prod-server  # user defaults to "admin"
+```
+
+**Important notes:**
+
+- **Exported arguments are always strings**: Even numeric-looking defaults like `$port=8080` result in the string `"8080"`. When using boolean-like values in shell scripts, use string comparison: `[ "$verbose" = "true" ]`
+- **Case preservation**: Environment variable names preserve the case exactly as written. `$Server` and `$server` are distinct variables (except on Windows where environment variables are case-insensitive)
+- **Environment variable precedence**: Exported arguments override any existing environment variables with the same name
+- **Cannot use template substitution**: Exported arguments are **not** available for `{{ arg.name }}` substitution. Attempting to use `{{ arg.server }}` when `server` is defined as `$server` results in an error
+
+**Use cases for exported arguments:**
+
+- Shell-heavy commands with many environment variable references
+- Passing credentials to subprocesses
+- Commands that spawn multiple subshells (exported vars available in all)
+- Integration with tools that expect environment variables
+
+**Example with Docker environments:**
+
+```yaml
+environments:
+  docker-build:
+    dockerfile: Dockerfile
+    context: .
+    volumes:
+      - .:/workspace
+
+tasks:
+  build:
+    env: docker-build
+    args: [$BUILD_TAG, $REGISTRY]
+    cmd: |
+      docker build -t $REGISTRY/app:$BUILD_TAG .
+      docker push $REGISTRY/app:$BUILD_TAG
+```
+
+Exported arguments are passed through to Docker containers as environment variables, overriding any Docker environment configuration.
+
+#### Troubleshooting Exported Arguments
+
+**Problem: Exported argument appears undefined in script**
+
+If your script reports an undefined variable:
+
+1. Verify the argument is prefixed with `$` in the `args` list
+2. Check that you're passing the argument when invoking the task:
+   ```bash
+   tt deploy prod-server  # If server is required
+   ```
+3. On Windows, use `%VAR%` syntax instead of `$VAR`:
+   ```yaml
+   tasks:
+     test:
+       args: [$server]
+       cmd: echo %server%  # Windows
+       # cmd: echo $server  # Unix/macOS
+   ```
+
+**Problem: How to debug which args are exported vs regular**
+
+Use `tt --show <task-name>` to view the task definition:
+```bash
+tt --show deploy
+```
+
+This displays the task with its argument specifications. Exported arguments have the `$` prefix.
+
+**Problem: Case-sensitive variable confusion**
+
+On Unix systems, `$Server` and `$server` are different variables. If you see unexpected behavior:
+
+1. Check that all references use the exact same case
+2. Task Tree will warn during parsing if it detects arguments that differ only in case
+3. Consider using lowercase consistently for environment variables to avoid confusion
+
+**Problem: Exported argument with default value not set**
+
+If an exported argument with a default isn't available as an environment variable:
+
+1. Ensure you're running on the latest version (this was a bug in earlier versions)
+2. The CLI automatically applies defaults before execution
+3. You can explicitly provide the value: `tt deploy prod-server port=8080`
 
 ## Environment Variables
 

@@ -1118,6 +1118,10 @@ def _parse_file(
             env=task_data.get("env", ""),
         )
 
+        # Check for case-sensitive argument collisions
+        if task.args:
+            _check_case_sensitive_arg_collisions(task.args, full_name)
+
         tasks[full_name] = task
 
     # Remove current file from stack
@@ -1126,28 +1130,80 @@ def _parse_file(
     return tasks
 
 
-def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None]:
+def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> None:
+    """Check for exported arguments that differ only in case.
+
+    On Unix systems, environment variables are case-sensitive, but having
+    args that differ only in case (e.g., $Server and $server) can be confusing.
+    This function emits a warning if such collisions are detected.
+
+    Args:
+        args: List of argument specifications
+        task_name: Name of the task (for warning message)
+    """
+    import sys
+
+    # Parse all exported arg names
+    exported_names = []
+    for arg_spec in args:
+        name, _, _, is_exported = parse_arg_spec(arg_spec)
+        if is_exported:
+            exported_names.append(name)
+
+    # Check for case collisions
+    seen_lower = {}
+    for name in exported_names:
+        lower_name = name.lower()
+        if lower_name in seen_lower:
+            # Found a collision
+            other_name = seen_lower[lower_name]
+            if name != other_name:  # Only warn if actual case differs
+                print(
+                    f"Warning: Task '{task_name}' has exported arguments that differ only in case: "
+                    f"${other_name} and ${name}. "
+                    f"This may be confusing on case-sensitive systems.",
+                    file=sys.stderr
+                )
+        else:
+            seen_lower[lower_name] = name
+
+
+def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None, bool]:
     """Parse argument specification.
 
-    Format: name:type=default
+    Format: [$]name[:type][=default]
+    - $ prefix marks argument as exported (environment variable)
     - name is required
     - type is optional (defaults to 'str')
     - default is optional
+    - exported arguments cannot have type annotations
 
     Args:
         arg_spec: Argument specification string
 
     Returns:
-        Tuple of (name, type, default)
+        Tuple of (name, type, default, is_exported)
 
     Examples:
         >>> parse_arg_spec("environment")
-        ('environment', 'str', None)
+        ('environment', 'str', None, False)
         >>> parse_arg_spec("region=eu-west-1")
-        ('region', 'str', 'eu-west-1')
+        ('region', 'str', 'eu-west-1', False)
         >>> parse_arg_spec("port:int=8080")
-        ('port', 'int', '8080')
+        ('port', 'int', '8080', False)
+        >>> parse_arg_spec("$server")
+        ('server', 'str', None, True)
+        >>> parse_arg_spec("$user=admin")
+        ('user', 'str', 'admin', True)
+
+    Raises:
+        ValueError: If exported argument has type annotation
     """
+    # Check if argument is exported (starts with $)
+    is_exported = arg_spec.startswith("$")
+    if is_exported:
+        arg_spec = arg_spec[1:]  # Remove $ prefix
+
     # Split on = to separate name:type from default
     if "=" in arg_spec:
         name_type, default = arg_spec.split("=", 1)
@@ -1158,8 +1214,17 @@ def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None]:
     # Split on : to separate name from type
     if ":" in name_type:
         name, arg_type = name_type.split(":", 1)
+
+        # Exported arguments cannot have type annotations
+        if is_exported:
+            raise ValueError(
+                f"Type annotations not allowed on exported arguments\n"
+                f"In argument: ${name}:{arg_type}\n\n"
+                f"Exported arguments are always strings. Remove the type annotation:\n"
+                f"  args: [${name}]"
+            )
     else:
         name = name_type
         arg_type = "str"
 
-    return name, arg_type, default
+    return name, arg_type, default, is_exported

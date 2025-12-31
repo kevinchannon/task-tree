@@ -41,6 +41,18 @@ class ExecutionError(Exception):
 class Executor:
     """Executes tasks with incremental execution logic."""
 
+    # Protected environment variables that cannot be overridden by exported args
+    PROTECTED_ENV_VARS = {
+        'PATH',
+        'LD_LIBRARY_PATH',
+        'LD_PRELOAD',
+        'PYTHONPATH',
+        'HOME',
+        'SHELL',
+        'USER',
+        'LOGNAME',
+    }
+
     def __init__(self, recipe: Recipe, state_manager: StateManager):
         """Initialize executor.
 
@@ -51,6 +63,30 @@ class Executor:
         self.recipe = recipe
         self.state = state_manager
         self.docker_manager = docker_module.DockerManager(recipe.project_root)
+
+    def _prepare_env_with_exports(self, exported_env_vars: dict[str, str] | None = None) -> dict[str, str]:
+        """Prepare environment with exported arguments.
+
+        Args:
+            exported_env_vars: Exported arguments to set as environment variables
+
+        Returns:
+            Environment dict with exported args merged
+
+        Raises:
+            ValueError: If an exported arg attempts to override a protected environment variable
+        """
+        env = os.environ.copy()
+        if exported_env_vars:
+            # Check for protected environment variable overrides
+            for key in exported_env_vars:
+                if key in self.PROTECTED_ENV_VARS:
+                    raise ValueError(
+                        f"Cannot override protected environment variable: {key}\n"
+                        f"Protected variables are: {', '.join(sorted(self.PROTECTED_ENV_VARS))}"
+                    )
+            env.update(exported_env_vars)
+        return env
 
     def _get_platform_default_environment(self) -> tuple[str, list[str]]:
         """Get default shell and args for current platform.
@@ -301,12 +337,31 @@ class Executor:
         Raises:
             ExecutionError: If task execution fails
         """
+        # Parse task arguments to identify exported args
+        # Note: args_dict already has defaults applied by CLI (cli.py:413-424)
+        from tasktree.parser import parse_arg_spec
+        exported_args = set()
+        regular_args = {}
+        exported_env_vars = {}
+
+        for arg_spec in task.args:
+            name, arg_type, default, is_exported = parse_arg_spec(arg_spec)
+            if is_exported:
+                exported_args.add(name)
+                # Get value and convert to string for environment variable
+                # Value should always be in args_dict (CLI applies defaults)
+                if name in args_dict:
+                    exported_env_vars[name] = str(args_dict[name])
+            else:
+                if name in args_dict:
+                    regular_args[name] = args_dict[name]
+
         # Substitute arguments and environment variables in command
-        cmd = self._substitute_args(task.cmd, args_dict)
+        cmd = self._substitute_args(task.cmd, regular_args, exported_args)
         cmd = self._substitute_env(cmd)
 
         # Substitute in working_dir as well
-        working_dir_str = self._substitute_args(task.working_dir, args_dict)
+        working_dir_str = self._substitute_args(task.working_dir, regular_args, exported_args)
         working_dir_str = self._substitute_env(working_dir_str)
         working_dir = self.recipe.project_root / working_dir_str
 
@@ -322,22 +377,23 @@ class Executor:
         # Route to Docker execution or regular execution
         if env and env.dockerfile:
             # Docker execution path
-            self._run_task_in_docker(task, env, cmd, working_dir)
+            self._run_task_in_docker(task, env, cmd, working_dir, exported_env_vars)
         else:
             # Regular execution path
             shell, shell_args, preamble = self._resolve_environment(task)
 
             # Detect multi-line commands (ignore trailing newlines from YAML folded blocks)
             if "\n" in cmd.rstrip():
-                self._run_multiline_command(cmd, working_dir, task.name, shell, preamble)
+                self._run_multiline_command(cmd, working_dir, task.name, shell, preamble, exported_env_vars)
             else:
-                self._run_single_line_command(cmd, working_dir, task.name, shell, shell_args)
+                self._run_single_line_command(cmd, working_dir, task.name, shell, shell_args, exported_env_vars)
 
         # Update state
         self._update_state(task, args_dict)
 
     def _run_single_line_command(
-        self, cmd: str, working_dir: Path, task_name: str, shell: str, shell_args: list[str]
+        self, cmd: str, working_dir: Path, task_name: str, shell: str, shell_args: list[str],
+        exported_env_vars: dict[str, str] | None = None
     ) -> None:
         """Execute a single-line command via shell.
 
@@ -347,10 +403,14 @@ class Executor:
             task_name: Task name (for error messages)
             shell: Shell executable to use
             shell_args: Arguments to pass to shell
+            exported_env_vars: Exported arguments to set as environment variables
 
         Raises:
             ExecutionError: If command execution fails
         """
+        # Prepare environment with exported args
+        env = self._prepare_env_with_exports(exported_env_vars)
+
         try:
             # Build command: shell + args + cmd
             full_cmd = [shell] + shell_args + [cmd]
@@ -359,6 +419,7 @@ class Executor:
                 cwd=working_dir,
                 check=True,
                 capture_output=False,
+                env=env,
             )
         except subprocess.CalledProcessError as e:
             raise ExecutionError(
@@ -366,7 +427,8 @@ class Executor:
             )
 
     def _run_multiline_command(
-        self, cmd: str, working_dir: Path, task_name: str, shell: str, preamble: str
+        self, cmd: str, working_dir: Path, task_name: str, shell: str, preamble: str,
+        exported_env_vars: dict[str, str] | None = None
     ) -> None:
         """Execute a multi-line command via temporary script file.
 
@@ -376,10 +438,14 @@ class Executor:
             task_name: Task name (for error messages)
             shell: Shell to use for script execution
             preamble: Preamble text to prepend to script
+            exported_env_vars: Exported arguments to set as environment variables
 
         Raises:
             ExecutionError: If command execution fails
         """
+        # Prepare environment with exported args
+        env = self._prepare_env_with_exports(exported_env_vars)
+
         # Determine file extension based on platform
         is_windows = platform.system() == "Windows"
         script_ext = ".bat" if is_windows else ".sh"
@@ -420,6 +486,7 @@ class Executor:
                     cwd=working_dir,
                     check=True,
                     capture_output=False,
+                    env=env,
                 )
             except subprocess.CalledProcessError as e:
                 raise ExecutionError(
@@ -433,7 +500,8 @@ class Executor:
                 pass  # Ignore cleanup errors
 
     def _run_task_in_docker(
-        self, task: Task, env: Any, cmd: str, working_dir: Path
+        self, task: Task, env: Any, cmd: str, working_dir: Path,
+        exported_env_vars: dict[str, str] | None = None
     ) -> None:
         """Execute task inside Docker container.
 
@@ -442,6 +510,7 @@ class Executor:
             env: Docker environment configuration
             cmd: Command to execute
             working_dir: Host working directory
+            exported_env_vars: Exported arguments to set as environment variables
 
         Raises:
             ExecutionError: If Docker execution fails
@@ -451,10 +520,26 @@ class Executor:
             env.working_dir, task.working_dir
         )
 
+        # Validate and merge exported args with env vars (exported args take precedence)
+        docker_env_vars = env.env_vars.copy() if env.env_vars else {}
+        if exported_env_vars:
+            # Check for protected environment variable overrides
+            for key in exported_env_vars:
+                if key in self.PROTECTED_ENV_VARS:
+                    raise ValueError(
+                        f"Cannot override protected environment variable: {key}\n"
+                        f"Protected variables are: {', '.join(sorted(self.PROTECTED_ENV_VARS))}"
+                    )
+            docker_env_vars.update(exported_env_vars)
+
+        # Create modified environment with merged env vars using dataclass replace
+        from dataclasses import replace
+        modified_env = replace(env, env_vars=docker_env_vars)
+
         # Execute in container
         try:
             self.docker_manager.run_in_container(
-                env=env,
+                env=modified_env,
                 cmd=cmd,
                 working_dir=working_dir,
                 container_working_dir=container_working_dir,
@@ -462,7 +547,7 @@ class Executor:
         except docker_module.DockerError as e:
             raise ExecutionError(str(e)) from e
 
-    def _substitute_args(self, cmd: str, args_dict: dict[str, Any]) -> str:
+    def _substitute_args(self, cmd: str, args_dict: dict[str, Any], exported_args: set[str] | None = None) -> str:
         """Substitute {{ arg.name }} placeholders in command string.
 
         Variables are already substituted at parse time by the parser.
@@ -470,13 +555,17 @@ class Executor:
 
         Args:
             cmd: Command with {{ arg.name }} placeholders
-            args_dict: Argument values to substitute
+            args_dict: Argument values to substitute (only regular args)
+            exported_args: Set of argument names that are exported (not available for substitution)
 
         Returns:
             Command with arguments substituted
+
+        Raises:
+            ValueError: If an exported argument is used in template substitution
         """
         from tasktree.substitution import substitute_arguments
-        return substitute_arguments(cmd, args_dict)
+        return substitute_arguments(cmd, args_dict, exported_args)
 
     def _substitute_env(self, text: str) -> str:
         """Substitute {{ env.NAME }} placeholders in text.
