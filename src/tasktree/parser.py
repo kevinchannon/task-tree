@@ -1126,28 +1126,42 @@ def _parse_file(
     return tasks
 
 
-def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None]:
+def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None, bool]:
     """Parse argument specification.
 
-    Format: name:type=default
+    Format: [$]name[:type][=default]
+    - $ prefix marks argument as exported (environment variable)
     - name is required
     - type is optional (defaults to 'str')
     - default is optional
+    - exported arguments cannot have type annotations
 
     Args:
         arg_spec: Argument specification string
 
     Returns:
-        Tuple of (name, type, default)
+        Tuple of (name, type, default, is_exported)
 
     Examples:
         >>> parse_arg_spec("environment")
-        ('environment', 'str', None)
+        ('environment', 'str', None, False)
         >>> parse_arg_spec("region=eu-west-1")
-        ('region', 'str', 'eu-west-1')
+        ('region', 'str', 'eu-west-1', False)
         >>> parse_arg_spec("port:int=8080")
-        ('port', 'int', '8080')
+        ('port', 'int', '8080', False)
+        >>> parse_arg_spec("$server")
+        ('server', 'str', None, True)
+        >>> parse_arg_spec("$user=admin")
+        ('user', 'str', 'admin', True)
+
+    Raises:
+        ValueError: If exported argument has type annotation
     """
+    # Check if argument is exported (starts with $)
+    is_exported = arg_spec.startswith("$")
+    if is_exported:
+        arg_spec = arg_spec[1:]  # Remove $ prefix
+
     # Split on = to separate name:type from default
     if "=" in arg_spec:
         name_type, default = arg_spec.split("=", 1)
@@ -1158,8 +1172,17 @@ def parse_arg_spec(arg_spec: str) -> tuple[str, str, str | None]:
     # Split on : to separate name from type
     if ":" in name_type:
         name, arg_type = name_type.split(":", 1)
+
+        # Exported arguments cannot have type annotations
+        if is_exported:
+            raise ValueError(
+                f"Type annotations not allowed on exported arguments\n"
+                f"In argument: ${name}:{arg_type}\n\n"
+                f"Exported arguments are always strings. Remove the type annotation:\n"
+                f"  args: [${name}]"
+            )
     else:
         name = name_type
         arg_type = "str"
 
-    return name, arg_type, default
+    return name, arg_type, default, is_exported

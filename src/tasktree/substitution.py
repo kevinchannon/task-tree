@@ -47,19 +47,23 @@ def substitute_variables(text: str, variables: dict[str, str]) -> str:
     return PLACEHOLDER_PATTERN.sub(replace_match, text)
 
 
-def substitute_arguments(text: str, args: dict[str, Any]) -> str:
+def substitute_arguments(text: str, args: dict[str, Any], exported_args: set[str] | None = None) -> str:
     """Substitute {{ arg.name }} placeholders with argument values.
 
     Args:
         text: Text containing {{ arg.name }} placeholders
         args: Dictionary mapping argument names to their values
+        exported_args: Set of argument names that are exported (not available for substitution)
 
     Returns:
         Text with all {{ arg.name }} placeholders replaced
 
     Raises:
-        ValueError: If a referenced argument is not provided
+        ValueError: If a referenced argument is not provided or is exported
     """
+    if exported_args is None:
+        exported_args = set()
+
     def replace_match(match: re.Match) -> str:
         prefix = match.group(1)
         name = match.group(2)
@@ -67,6 +71,15 @@ def substitute_arguments(text: str, args: dict[str, Any]) -> str:
         # Only substitute arg: placeholders
         if prefix != "arg":
             return match.group(0)  # Return unchanged
+
+        # Check if argument is exported (not available for substitution)
+        if name in exported_args:
+            raise ValueError(
+                f"Argument '{name}' is exported (defined as ${name}) and cannot be used in template substitution\n"
+                f"Template: {{{{ arg.{name} }}}}\n\n"
+                f"Exported arguments are available as environment variables:\n"
+                f"  cmd: ... ${name} ..."
+            )
 
         if name not in args:
             raise ValueError(
