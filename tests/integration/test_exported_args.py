@@ -110,8 +110,9 @@ tasks:
             args_dict = _parse_task_args(task.args, ["prod-server"])
 
             # Verify CLI applied the default
+            # Exported args are always strings (environment variables)
             self.assertEqual(args_dict["server"], "prod-server")
-            self.assertEqual(args_dict["port"], 8080)
+            self.assertEqual(args_dict["port"], "8080")
 
             # Execute with args_dict from CLI
             state = StateManager(recipe.project_root)
