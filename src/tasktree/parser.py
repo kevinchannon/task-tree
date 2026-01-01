@@ -1292,10 +1292,18 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
         arg_type = "str"
 
     # String format doesn't support min/max/choices
-    return name, arg_type, default, is_exported, None, None, None
+    return ArgSpec(
+        name=name,
+        arg_type=arg_type,
+        default=default,
+        is_exported=is_exported,
+        min_val=None,
+        max_val=None,
+        choices=None
+    )
 
 
-def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str, str, str | None, bool, int | float | None, int | float | None, list[Any] | None]:
+def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> ArgSpec:
     """Parse argument specification from dictionary format.
 
     Args:
@@ -1304,7 +1312,7 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
         is_exported: Whether argument should be exported to environment
 
     Returns:
-        Tuple of (name, type, default, is_exported, min, max, choices)
+        ArgSpec object containing the parsed argument specification
 
     Raises:
         ValueError: If dictionary format is invalid
