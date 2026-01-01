@@ -375,8 +375,8 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
 
     parsed_specs = []
     for spec in arg_specs:
-        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(spec)
-        parsed_specs.append((name, arg_type, default, is_exported, min_val, max_val))
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(spec)
+        parsed_specs.append((name, arg_type, default, is_exported, min_val, max_val, choices))
 
     args_dict = {}
     positional_index = 0
@@ -390,13 +390,13 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
             if spec is None:
                 console.print(f"[red]Unknown argument: {arg_name}[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default, is_exported, min_val, max_val = spec
+            name, arg_type, default, is_exported, min_val, max_val, choices = spec
         else:
             # Positional argument
             if positional_index >= len(parsed_specs):
                 console.print(f"[red]Too many arguments[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default, is_exported, min_val, max_val = parsed_specs[positional_index]
+            name, arg_type, default, is_exported, min_val, max_val, choices = parsed_specs[positional_index]
             arg_value = value_str
             positional_index += 1
 
@@ -404,13 +404,22 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
         try:
             click_type = get_click_type(arg_type, min_val=min_val, max_val=max_val)
             converted_value = click_type.convert(arg_value, None, None)
+
+            # Validate choices after type conversion
+            if choices is not None and converted_value not in choices:
+                console.print(f"[red]Invalid value for {name}: {converted_value!r}[/red]")
+                console.print(f"Valid choices: {', '.join(repr(c) for c in choices)}")
+                raise typer.Exit(1)
+
             args_dict[name] = converted_value
+        except typer.Exit:
+            raise  # Re-raise typer.Exit without wrapping
         except Exception as e:
             console.print(f"[red]Invalid value for {name}: {e}[/red]")
             raise typer.Exit(1)
 
     # Fill in defaults for missing arguments
-    for name, arg_type, default, is_exported, min_val, max_val in parsed_specs:
+    for name, arg_type, default, is_exported, min_val, max_val, choices in parsed_specs:
         if name not in args_dict:
             if default is not None:
                 try:

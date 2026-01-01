@@ -257,6 +257,132 @@ class TestParseArgSpecYAML(unittest.TestCase):
         self.assertTrue(exported[3])
 
 
+class TestParseArgSpecChoices(unittest.TestCase):
+    """Tests for choices validation in argument specifications."""
+
+    def test_valid_choices_with_explicit_type(self):
+        """Test choices with explicit type match."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"environment": {"type": "str", "choices": ["dev", "staging", "prod"]}}
+        )
+        self.assertEqual(name, "environment")
+        self.assertEqual(arg_type, "str")
+        self.assertIsNone(default)
+        self.assertEqual(choices, ["dev", "staging", "prod"])
+
+    def test_valid_choices_with_type_inference(self):
+        """Test type inference from choices."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"region": {"choices": ["us-east-1", "eu-west-1"]}}
+        )
+        self.assertEqual(name, "region")
+        self.assertEqual(arg_type, "str")
+        self.assertEqual(choices, ["us-east-1", "eu-west-1"])
+
+    def test_int_choices_inferred(self):
+        """Test type inference from integer choices."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"priority": {"choices": [1, 2, 3]}}
+        )
+        self.assertEqual(name, "priority")
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(choices, [1, 2, 3])
+
+    def test_empty_choices_list_error(self):
+        """Test that empty choices list produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"choices": []}})
+        self.assertIn("empty", str(cm.exception).lower())
+
+    def test_mixed_types_in_choices_error(self):
+        """Test that mixed types in choices produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"choices": [1, "two", 3]}})
+        self.assertIn("same type", str(cm.exception).lower())
+
+    def test_boolean_type_with_choices_error(self):
+        """Test that boolean type with choices produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"flag": {"type": "bool", "choices": [True, False]}})
+        self.assertIn("boolean", str(cm.exception).lower())
+
+    def test_choices_and_min_mutual_exclusivity(self):
+        """Test that choices and min are mutually exclusive."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"type": "int", "choices": [1, 2, 3], "min": 1}})
+        self.assertIn("mutually exclusive", str(cm.exception).lower())
+
+    def test_choices_and_max_mutual_exclusivity(self):
+        """Test that choices and max are mutually exclusive."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"type": "int", "choices": [1, 2, 3], "max": 10}})
+        self.assertIn("mutually exclusive", str(cm.exception).lower())
+
+    def test_default_in_choices_valid(self):
+        """Test that default value in choices passes."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"env": {"choices": ["dev", "prod"], "default": "dev"}}
+        )
+        self.assertEqual(default, "dev")
+        self.assertEqual(choices, ["dev", "prod"])
+
+    def test_default_not_in_choices_error(self):
+        """Test that default value not in choices produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"env": {"choices": ["dev", "prod"], "default": "staging"}})
+        self.assertIn("not in the choices list", str(cm.exception))
+
+    def test_choice_values_match_explicit_type(self):
+        """Test that explicit type validation works with choices."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"count": {"type": "int", "choices": [1, 2, 3]}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(choices, [1, 2, 3])
+
+    def test_choice_values_dont_match_explicit_type_error(self):
+        """Test that choice values not matching explicit type produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"count": {"type": "int", "choices": ["one", "two"]}})
+        self.assertIn("do not match explicit type", str(cm.exception))
+
+    def test_string_choices_with_spaces(self):
+        """Test that string choices with spaces parse correctly."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"message": {"choices": ["hello world", "foo bar"]}}
+        )
+        self.assertEqual(choices, ["hello world", "foo bar"])
+
+    def test_choices_not_a_list_error(self):
+        """Test that non-list choices value produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"choices": "not a list"}})
+        self.assertIn("must be a list", str(cm.exception))
+
+    def test_float_choices(self):
+        """Test float choices."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"ratio": {"type": "float", "choices": [0.5, 1.0, 1.5]}}
+        )
+        self.assertEqual(arg_type, "float")
+        self.assertEqual(choices, [0.5, 1.0, 1.5])
+
+    def test_type_inference_from_choices_and_default_consistent(self):
+        """Test that type inferred from choices and default is consistent."""
+        name, arg_type, default, is_exported, min_val, max_val, choices = parse_arg_spec(
+            {"priority": {"choices": [1, 2, 3], "default": 2}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(default, "2")
+        self.assertEqual(choices, [1, 2, 3])
+
+    def test_type_inference_from_choices_and_default_inconsistent_error(self):
+        """Test that inconsistent types from choices and default produces error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"choices": [1, 2, 3], "default": "two"}})
+        self.assertIn("inconsistent types", str(cm.exception).lower())
+
+
 class TestParseRecipe(unittest.TestCase):
     def test_parse_simple_recipe(self):
         """Test parsing a simple recipe with one task."""
