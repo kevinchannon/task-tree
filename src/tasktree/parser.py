@@ -1150,7 +1150,7 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
     # Parse all exported arg names
     exported_names = []
     for arg_spec in args:
-        name, _, _, is_exported = parse_arg_spec(arg_spec)
+        name, _, _, is_exported, _, _ = parse_arg_spec(arg_spec)
         if is_exported:
             exported_names.append(name)
 
@@ -1172,7 +1172,7 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
             seen_lower[lower_name] = name
 
 
-def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool]:
+def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool, int | float | None, int | float | None]:
     """Parse argument specification from YAML.
 
     Supports both string format and dictionary format:
@@ -1186,21 +1186,24 @@ def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool]:
     Dictionary format:
         - argname: { default: "value" }
         - argname: { type: int, default: 42 }
+        - argname: { type: int, min: 1, max: 100 }
         - $argname: { default: "value" }  # Exported
 
     Args:
         arg_spec: Argument specification (string or dict with single key)
 
     Returns:
-        Tuple of (name, type, default, is_exported)
+        Tuple of (name, type, default, is_exported, min, max)
 
     Examples:
         >>> parse_arg_spec("environment")
-        ('environment', 'str', None, False)
+        ('environment', 'str', None, False, None, None)
         >>> parse_arg_spec({"key2": {"default": "foo"}})
-        ('key2', 'str', 'foo', False)
+        ('key2', 'str', 'foo', False, None, None)
         >>> parse_arg_spec({"key3": {"type": "int", "default": 42}})
-        ('key3', 'int', '42', False)
+        ('key3', 'int', '42', False, None, None)
+        >>> parse_arg_spec({"replicas": {"type": "int", "min": 1, "max": 100}})
+        ('replicas', 'int', None, False, 1, 100)
 
     Raises:
         ValueError: If argument specification is invalid
@@ -1263,25 +1266,26 @@ def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool]:
         name = name_type
         arg_type = "str"
 
-    return name, arg_type, default, is_exported
+    # String format doesn't support min/max
+    return name, arg_type, default, is_exported, None, None
 
 
-def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str, str, str | None, bool]:
+def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str, str, str | None, bool, int | float | None, int | float | None]:
     """Parse argument specification from dictionary format.
 
     Args:
         arg_name: Name of the argument
-        config: Dictionary with optional keys: type, default
+        config: Dictionary with optional keys: type, default, min, max
         is_exported: Whether argument should be exported to environment
 
     Returns:
-        Tuple of (name, type, default, is_exported)
+        Tuple of (name, type, default, is_exported, min, max)
 
     Raises:
         ValueError: If dictionary format is invalid
     """
     # Validate dictionary keys
-    valid_keys = {"type", "default"}
+    valid_keys = {"type", "default", "min", "max"}
     invalid_keys = set(config.keys()) - valid_keys
     if invalid_keys:
         raise ValueError(
@@ -1292,6 +1296,8 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
     # Extract values
     arg_type = config.get("type")
     default = config.get("default")
+    min_val = config.get("min")
+    max_val = config.get("max")
 
     # Exported arguments cannot have type annotations
     if is_exported and arg_type is not None:
@@ -1309,6 +1315,20 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
             # Default to string
             arg_type = "str"
 
+    # Validate min/max are only used with numeric types
+    if (min_val is not None or max_val is not None) and arg_type not in ("int", "float"):
+        raise ValueError(
+            f"Argument '{arg_name}': min/max constraints are only supported for 'int' and 'float' types, "
+            f"not '{arg_type}'"
+        )
+
+    # Validate min <= max
+    if min_val is not None and max_val is not None:
+        if min_val > max_val:
+            raise ValueError(
+                f"Argument '{arg_name}': min ({min_val}) must be less than or equal to max ({max_val})"
+            )
+
     # Validate type name and get validator
     try:
         validator = get_click_type(arg_type)
@@ -1325,10 +1345,20 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
             # Validate that the default value is compatible with the type
             try:
                 # Use the validator we already retrieved
-                validator.convert(default, None, None)
+                converted_default = validator.convert(default, None, None)
             except Exception as e:
                 raise ValueError(
                     f"Default value for argument '{arg_name}' is incompatible with type '{arg_type}': {e}"
+                )
+
+            # Validate default is within min/max range
+            if min_val is not None and converted_default < min_val:
+                raise ValueError(
+                    f"Default value for argument '{arg_name}' ({default}) is less than min ({min_val})"
+                )
+            if max_val is not None and converted_default > max_val:
+                raise ValueError(
+                    f"Default value for argument '{arg_name}' ({default}) is greater than max ({max_val})"
                 )
 
             # After validation, convert to string for storage
@@ -1339,4 +1369,4 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
         # None remains None (not the string "None")
         default_str = None
 
-    return arg_name, arg_type, default_str, is_exported
+    return arg_name, arg_type, default_str, is_exported, min_val, max_val

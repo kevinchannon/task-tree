@@ -113,11 +113,13 @@ TYPE_MAPPING = {
 }
 
 
-def get_click_type(type_name: str) -> click.ParamType:
-    """Get Click parameter type by name.
+def get_click_type(type_name: str, min_val: int | float | None = None, max_val: int | float | None = None) -> click.ParamType:
+    """Get Click parameter type by name with optional range constraints.
 
     Args:
         type_name: Type name from task definition (e.g., 'str', 'int', 'hostname')
+        min_val: Optional minimum value for numeric types
+        max_val: Optional maximum value for numeric types
 
     Returns:
         Click parameter type instance
@@ -127,4 +129,11 @@ def get_click_type(type_name: str) -> click.ParamType:
     """
     if type_name not in TYPE_MAPPING:
         raise ValueError(f"Unknown type: {type_name}")
+
+    # For int and float types, apply range constraints if specified
+    if type_name == "int" and (min_val is not None or max_val is not None):
+        return click.IntRange(min=min_val, max=max_val)
+    elif type_name == "float" and (min_val is not None or max_val is not None):
+        return click.FloatRange(min=min_val, max=max_val)
+
     return TYPE_MAPPING[type_name]

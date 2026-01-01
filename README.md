@@ -396,7 +396,27 @@ args:
   - port: { type: int }               # With type annotation
   - region: { default: "eu-west-1" }  # With default (type inferred)
   - count: { type: int, default: 10 } # With both type and default
+  - replicas: { type: int, min: 1, max: 100 }  # With range constraints
+  - timeout: { type: float, min: 0.5, max: 30.0, default: 10.0 }  # Range with default
 ```
+
+**Range constraints** (min/max):
+
+For `int` and `float` arguments, you can specify `min` and/or `max` constraints to validate values at parse time:
+
+```yaml
+args:
+  - replicas: { type: int, min: 1, max: 100 }       # Both min and max
+  - port: { type: int, min: 1024 }                  # Only minimum
+  - percentage: { type: float, max: 100.0 }         # Only maximum
+  - workers: { type: int, min: 1, max: 16, default: 4 }  # With default
+```
+
+* Both bounds are **inclusive**: `min` is the smallest allowable value, `max` is the largest
+* Can specify `min` alone, `max` alone, or both together
+* Default values must also satisfy the constraints
+* Validation happens at parse time with clear error messages
+* Not supported for non-numeric types (str, bool, path, etc.)
 
 When a default value is provided without an explicit type, the type is inferred from the default value's Python type. Valid argument types are:
 
