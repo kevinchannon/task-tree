@@ -1322,9 +1322,6 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
     if default is not None:
         # Validate that default is compatible with the declared type
         if arg_type != "str":
-            # Ensure we can convert the default to a string
-            default_str = str(default)
-
             # Validate that the default value is compatible with the type
             try:
                 # Use the validator we already retrieved
@@ -1333,6 +1330,9 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
                 raise ValueError(
                     f"Default value for argument '{arg_name}' is incompatible with type '{arg_type}': {e}"
                 )
+
+            # After validation, convert to string for storage
+            default_str = str(default)
         else:
             default_str = str(default)
     else:
