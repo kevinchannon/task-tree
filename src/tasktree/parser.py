@@ -1299,6 +1299,9 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
     min_val = config.get("min")
     max_val = config.get("max")
 
+    # Track if an explicit type was provided (for validation later)
+    explicit_type = arg_type
+
     # Exported arguments cannot have type annotations
     if is_exported and arg_type is not None:
         raise ValueError(
@@ -1306,14 +1309,46 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
             f"Exported arguments are always strings. Remove the 'type' field"
         )
 
-    # Infer type from default if type not specified
+    # Infer type from default, min, or max if type not specified
     if arg_type is None:
+        # Collect all values that can help infer type
+        inferred_types = []
+
         if default is not None:
-            # Infer from default value's Python type
-            arg_type = _infer_variable_type(default)
+            inferred_types.append(("default", _infer_variable_type(default)))
+        if min_val is not None:
+            inferred_types.append(("min", _infer_variable_type(min_val)))
+        if max_val is not None:
+            inferred_types.append(("max", _infer_variable_type(max_val)))
+
+        if inferred_types:
+            # Check all inferred types are consistent
+            first_name, first_type = inferred_types[0]
+            for value_name, value_type in inferred_types[1:]:
+                if value_type != first_type:
+                    # Build error message showing the conflicting types
+                    type_info = ", ".join([f"{name}={vtype}" for name, vtype in inferred_types])
+                    raise ValueError(
+                        f"Argument '{arg_name}': inconsistent types inferred from min, max, and default.\n"
+                        f"All values must have the same type.\n"
+                        f"Found: {type_info}"
+                    )
+
+            # All types are consistent, use the inferred type
+            arg_type = first_type
         else:
-            # Default to string
+            # No values to infer from, default to string
             arg_type = "str"
+    else:
+        # Explicit type was provided - validate that default matches it
+        # (min/max validation happens later, after the min/max numeric check)
+        if default is not None:
+            default_type = _infer_variable_type(default)
+            if default_type != explicit_type:
+                raise ValueError(
+                    f"Default value for argument '{arg_name}' is incompatible with type '{explicit_type}': "
+                    f"default has type '{default_type}'"
+                )
 
     # Validate min/max are only used with numeric types
     if (min_val is not None or max_val is not None) and arg_type not in ("int", "float"):
@@ -1321,6 +1356,24 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
             f"Argument '{arg_name}': min/max constraints are only supported for 'int' and 'float' types, "
             f"not '{arg_type}'"
         )
+
+    # If explicit type was provided, validate min/max match that type
+    if explicit_type is not None and arg_type in ("int", "float"):
+        type_mismatches = []
+        if min_val is not None:
+            min_type = _infer_variable_type(min_val)
+            if min_type != explicit_type:
+                type_mismatches.append(f"min value has type '{min_type}'")
+        if max_val is not None:
+            max_type = _infer_variable_type(max_val)
+            if max_type != explicit_type:
+                type_mismatches.append(f"max value has type '{max_type}'")
+
+        if type_mismatches:
+            raise ValueError(
+                f"Argument '{arg_name}': explicit type '{explicit_type}' does not match value types.\n"
+                + "\n".join([f"  - {mismatch}" for mismatch in type_mismatches])
+            )
 
     # Validate min <= max
     if min_val is not None and max_val is not None:

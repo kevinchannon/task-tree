@@ -2495,5 +2495,215 @@ class TestArgMinMax(unittest.TestCase):
         self.assertEqual(max_val, 1.0)
 
 
+class TestArgTypeInference(unittest.TestCase):
+    """Tests for type inference from min, max, and default values (Issue #26)."""
+
+    def test_infer_int_from_min_only(self):
+        """Test type inference from min value alone."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"count": {"min": 1}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(min_val, 1)
+        self.assertIsNone(max_val)
+        self.assertIsNone(default)
+
+    def test_infer_int_from_max_only(self):
+        """Test type inference from max value alone."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"count": {"max": 100}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertIsNone(min_val)
+        self.assertEqual(max_val, 100)
+        self.assertIsNone(default)
+
+    def test_infer_float_from_min_only(self):
+        """Test type inference from float min value."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"ratio": {"min": 0.5}}
+        )
+        self.assertEqual(arg_type, "float")
+        self.assertEqual(min_val, 0.5)
+
+    def test_infer_float_from_max_only(self):
+        """Test type inference from float max value."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"ratio": {"max": 1.0}}
+        )
+        self.assertEqual(arg_type, "float")
+        self.assertEqual(max_val, 1.0)
+
+    def test_infer_from_min_and_max_consistent_int(self):
+        """Test type inference when both min and max are int."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"port": {"min": 1024, "max": 65535}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(min_val, 1024)
+        self.assertEqual(max_val, 65535)
+
+    def test_infer_from_min_and_max_consistent_float(self):
+        """Test type inference when both min and max are float."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"percentage": {"min": 0.0, "max": 100.0}}
+        )
+        self.assertEqual(arg_type, "float")
+        self.assertEqual(min_val, 0.0)
+        self.assertEqual(max_val, 100.0)
+
+    def test_infer_from_all_three_consistent(self):
+        """Test type inference when default, min, and max are all present and consistent."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"workers": {"default": 4, "min": 1, "max": 16}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(default, "4")
+        self.assertEqual(min_val, 1)
+        self.assertEqual(max_val, 16)
+
+    def test_error_on_inconsistent_min_max_types(self):
+        """Test error when min is int but max is float."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"min": 1, "max": 10.0}})
+        error_msg = str(cm.exception)
+        self.assertIn("inconsistent types", error_msg)
+        self.assertIn("min=int", error_msg)
+        self.assertIn("max=float", error_msg)
+
+    def test_error_on_inconsistent_default_min_types(self):
+        """Test error when default is str but min is int."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"default": "hello", "min": 1}})
+        error_msg = str(cm.exception)
+        self.assertIn("inconsistent types", error_msg)
+        self.assertIn("default=str", error_msg)
+        self.assertIn("min=int", error_msg)
+
+    def test_error_on_inconsistent_default_max_types(self):
+        """Test error when default is int but max is float."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"default": 5, "max": 10.0}})
+        error_msg = str(cm.exception)
+        self.assertIn("inconsistent types", error_msg)
+        self.assertIn("default=int", error_msg)
+        self.assertIn("max=float", error_msg)
+
+    def test_error_on_all_three_inconsistent(self):
+        """Test error when default, min, and max have different types."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"default": "text", "min": 1, "max": 10.0}})
+        error_msg = str(cm.exception)
+        self.assertIn("inconsistent types", error_msg)
+
+    def test_explicit_type_with_matching_default(self):
+        """Test that explicit type with matching default value works."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"count": {"type": "int", "default": 42}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(default, "42")
+
+    def test_explicit_type_with_matching_min_max(self):
+        """Test that explicit type with matching min/max works."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"count": {"type": "int", "min": 1, "max": 100}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(min_val, 1)
+        self.assertEqual(max_val, 100)
+
+    def test_error_explicit_type_mismatch_default(self):
+        """Test error when explicit type doesn't match default type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"type": "int", "default": "text"}})
+        error_msg = str(cm.exception)
+        self.assertIn("incompatible with type 'int'", error_msg)
+        self.assertIn("default has type 'str'", error_msg)
+
+    def test_error_explicit_type_mismatch_min(self):
+        """Test error when explicit type doesn't match min type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"type": "float", "min": 1}})
+        error_msg = str(cm.exception)
+        self.assertIn("explicit type 'float'", error_msg)
+        self.assertIn("min value has type 'int'", error_msg)
+
+    def test_error_explicit_type_mismatch_max(self):
+        """Test error when explicit type doesn't match max type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"type": "int", "max": 10.0}})
+        error_msg = str(cm.exception)
+        self.assertIn("explicit type 'int'", error_msg)
+        self.assertIn("max value has type 'float'", error_msg)
+
+    def test_error_explicit_type_mismatch_all_values(self):
+        """Test error when explicit type doesn't match any of default/min/max."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"type": "str", "default": 5, "min": 1, "max": 10}})
+        error_msg = str(cm.exception)
+        # This will fail on default check first (before min/max)
+        self.assertIn("incompatible with type 'str'", error_msg)
+        self.assertIn("default has type 'int'", error_msg)
+
+    def test_infer_bool_from_default_no_min_max(self):
+        """Test that bool can be inferred from default (but bool doesn't support min/max)."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"enabled": {"default": True}}
+        )
+        self.assertEqual(arg_type, "bool")
+        self.assertEqual(default, "True")
+
+    def test_infer_str_from_default_no_min_max(self):
+        """Test that str can be inferred from default."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"name": {"default": "test"}}
+        )
+        self.assertEqual(arg_type, "str")
+        self.assertEqual(default, "test")
+
+    def test_negative_values_in_inference(self):
+        """Test type inference with negative min/max values."""
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"temperature": {"min": -100, "max": 100, "default": -20}}
+        )
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(min_val, -100)
+        self.assertEqual(max_val, 100)
+        self.assertEqual(default, "-20")
+
+    def test_precedence_all_same_type(self):
+        """Test that when all values are same type, any can be used for inference."""
+        # This should work regardless of which value is checked first
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(
+            {"value": {"max": 100, "min": 1, "default": 50}}
+        )
+        self.assertEqual(arg_type, "int")
+
+    def test_float_inference_with_integer_default(self):
+        """Test that float min/max with integer default causes error."""
+        # Integer 5 has type 'int', float 1.0 has type 'float'
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"bad": {"min": 1.0, "max": 10.0, "default": 5}})
+        error_msg = str(cm.exception)
+        self.assertIn("inconsistent types", error_msg)
+
+    def test_inferred_type_default_less_than_min(self):
+        """Test that default < min raises error with inferred type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"count": {"min": 10, "max": 100, "default": 5}})
+        error_msg = str(cm.exception)
+        self.assertIn("Default value", error_msg)
+        self.assertIn("less than min", error_msg)
+
+    def test_inferred_type_default_greater_than_max(self):
+        """Test that default > max raises error with inferred type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"count": {"min": 1, "max": 10, "default": 15}})
+        error_msg = str(cm.exception)
+        self.assertIn("Default value", error_msg)
+        self.assertIn("greater than max", error_msg)
+
+
 if __name__ == "__main__":
     unittest.main()
