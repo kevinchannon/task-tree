@@ -9,7 +9,7 @@ import subprocess
 import tempfile
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -392,8 +392,8 @@ class Executor:
         Raises:
             ExecutionError: If task execution fails
         """
-        # Capture timestamp at task start for consistency
-        task_start_time = datetime.now()
+        # Capture timestamp at task start for consistency (in UTC)
+        task_start_time = datetime.now(timezone.utc)
 
         # Parse task arguments to identify exported args
         # Note: args_dict already has defaults applied by CLI (cli.py:413-424)
