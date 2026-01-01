@@ -164,9 +164,9 @@ tasks:
         output = output_file.read_text().strip()
         self.assertEqual(output, "false")
 
-        # Make uncommitted change
-        test_file = Path(self.test_dir) / 'modified.txt'
-        test_file.write_text('new content')
+        # Make uncommitted change to tracked file
+        test_file = Path(self.test_dir) / 'initial.txt'
+        test_file.write_text('modified content')
 
         # Second test - dirty repo
         executor2 = Executor(recipe, state)  # New executor with fresh git cache
@@ -257,30 +257,33 @@ tasks:
 
     def test_git_variable_error_handling_not_in_repo(self):
         """Test clear error when git variable used outside git repo."""
-        # Create non-git subdirectory
-        non_git_dir = Path(self.test_dir) / "non-git"
-        non_git_dir.mkdir()
-        recipe_in_non_git = non_git_dir / "tasktree.yaml"
+        # Create truly non-git directory (outside any git repo)
+        non_git_dir = tempfile.mkdtemp()
+        try:
+            recipe_in_non_git = Path(non_git_dir) / "tasktree.yaml"
 
-        recipe_content = """
+            recipe_content = """
 tasks:
   fail-task:
     cmd: echo "{{ git.commit }}"
 """
-        recipe_in_non_git.write_text(recipe_content)
+            recipe_in_non_git.write_text(recipe_content)
 
-        # Parse recipe and try to execute
-        from tasktree.executor import ExecutionError
+            # Parse recipe and try to execute
+            from tasktree.executor import ExecutionError
 
-        recipe = parse_recipe(recipe_in_non_git)
-        state = StateManager(recipe.project_root)
-        state.load()
-        executor = Executor(recipe, state)
+            recipe = parse_recipe(recipe_in_non_git)
+            state = StateManager(recipe.project_root)
+            state.load()
+            executor = Executor(recipe, state)
 
-        with self.assertRaises(ExecutionError) as cm:
-            executor.execute_task("fail-task")
+            with self.assertRaises(ExecutionError) as cm:
+                executor.execute_task("fail-task")
 
-        self.assertIn("git.commit", str(cm.exception))
+            self.assertIn("git.commit", str(cm.exception))
+        finally:
+            import shutil
+            shutil.rmtree(non_git_dir, ignore_errors=True)
 
     def test_git_tag_error_when_no_tags(self):
         """Test clear error when git.tag used but no tags exist."""

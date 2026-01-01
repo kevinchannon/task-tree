@@ -732,10 +732,26 @@ class Executor:
 
         Raises:
             ExecutionError: If git command fails (wraps ValueError from substitution)
+            ExecutionError: If working_dir is outside project root (security)
         """
+        # Validate working_dir is within project root to prevent path traversal attacks
+        try:
+            resolved_working_dir = working_dir.resolve()
+            resolved_project_root = self.recipe.project_root.resolve()
+
+            # Check if working_dir is within project_root
+            resolved_working_dir.relative_to(resolved_project_root)
+        except (ValueError, OSError) as e:
+            # ValueError: working_dir is not relative to project_root (path traversal attempt)
+            # OSError: resolution failed (invalid path, permissions, etc.)
+            raise ExecutionError(
+                f"Cannot execute git commands in '{working_dir}': "
+                f"working directory must be within project root ({self.recipe.project_root})"
+            ) from e
+
         from tasktree.substitution import substitute_git_variables
         try:
-            return substitute_git_variables(text, str(working_dir), self._git_cache)
+            return substitute_git_variables(text, str(resolved_working_dir), self._git_cache)
         except ValueError as e:
             raise ExecutionError(str(e)) from e
 

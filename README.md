@@ -875,9 +875,9 @@ tasks:
 ### Important Notes
 
 - **Git repository required**: Git variables require running from within a git repository. Tasks will fail with a clear error if git commands cannot execute.
-- **Detached HEAD**: When in detached HEAD state, `{{ git.branch }}` returns `HEAD`.
+- **Detached HEAD**: When in detached HEAD state (e.g., during CI checkout of specific commit), `{{ git.branch }}` returns `HEAD`. Consider using `{{ git.commit }}` or `{{ git.describe }}` instead for CI workflows.
 - **No tags**: If no tags exist, `{{ git.tag }}` and `{{ git.describe }}` will fail with an error. Create a tag first: `git tag v0.1.0`
-- **Dirty detection**: `{{ git.is_dirty }}` returns `"true"` if there are either staged or unstaged changes, `"false"` otherwise.
+- **Dirty detection**: `{{ git.is_dirty }}` returns `"true"` if there are staged or unstaged changes to **tracked files**, `"false"` otherwise. **Note**: Untracked files (files not yet added to git) are **not** detected as dirty. If you need to detect untracked files, use `git status --porcelain` in your task command.
 - **Caching**: Git values are cached per-invocation to avoid repeated subprocess calls. The same git variable used multiple times within a task execution will return the same value.
 
 ## File Imports

@@ -201,7 +201,8 @@ def substitute_git_variables(text: str, working_dir: str, git_cache: dict[str, s
         git_cache = {}
 
     # Map of git variable names to their git commands
-    GIT_COMMANDS = {
+    from typing import Final
+    GIT_COMMANDS: Final[dict[str, list[str]]] = {
         'commit': ['git', 'rev-parse', 'HEAD'],
         'commit_short': ['git', 'rev-parse', '--short', 'HEAD'],
         'branch': ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
