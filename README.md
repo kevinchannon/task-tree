@@ -394,10 +394,10 @@ Invoke with: `tt deploy production` or `tt deploy staging us-east-1` or `tt depl
 args:
   - name                              # Simple argument (type: str, no default)
   - port: { type: int }               # With type annotation
-  - region: { default: "eu-west-1" }  # With default (type inferred)
+  - region: { default: "eu-west-1" }  # With default (type inferred as str)
   - count: { type: int, default: 10 } # With both type and default
-  - replicas: { type: int, min: 1, max: 100 }  # With range constraints
-  - timeout: { type: float, min: 0.5, max: 30.0, default: 10.0 }  # Range with default
+  - replicas: { min: 1, max: 100 }    # Type inferred as int from min/max
+  - timeout: { min: 0.5, max: 30.0, default: 10.0 }  # Type inferred as float
 ```
 
 **Range constraints** (min/max):
@@ -406,19 +406,21 @@ For `int` and `float` arguments, you can specify `min` and/or `max` constraints 
 
 ```yaml
 args:
-  - replicas: { type: int, min: 1, max: 100 }       # Both min and max
-  - port: { type: int, min: 1024 }                  # Only minimum
-  - percentage: { type: float, max: 100.0 }         # Only maximum
-  - workers: { type: int, min: 1, max: 16, default: 4 }  # With default
+  - replicas: { min: 1, max: 100 }              # Type inferred as int from min/max
+  - port: { min: 1024 }                         # Type inferred as int from min
+  - percentage: { max: 100.0 }                  # Type inferred as float from max
+  - workers: { min: 1, max: 16, default: 4 }    # Type inferred as int (all consistent)
 ```
 
 * Both bounds are **inclusive**: `min` is the smallest allowable value, `max` is the largest
 * Can specify `min` alone, `max` alone, or both together
-* Default values must also satisfy the constraints
+* Type can be inferred from `min`, `max`, or `default` - all provided values must have consistent types
+* When explicit `type` is specified, all `min`, `max`, and `default` values must match that type
+* Default values must satisfy the min/max constraints
 * Validation happens at parse time with clear error messages
 * Not supported for non-numeric types (str, bool, path, etc.)
 
-When a default value is provided without an explicit type, the type is inferred from the default value's Python type. Valid argument types are:
+When no explicit type is provided, the type is inferred from `default`, `min`, or `max` values (all must have consistent types). Valid argument types are:
 
 * int - an integer value (e.g. 0, 10, 123, -9)
 * float - a floating point value (e.g. 1.234, -3.1415, 2e-4)
