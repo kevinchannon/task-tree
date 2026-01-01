@@ -1150,7 +1150,7 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
     # Parse all exported arg names
     exported_names = []
     for arg_spec in args:
-        name, _, _, is_exported, _, _ = parse_arg_spec(arg_spec)
+        name, _, _, is_exported, _, _, _ = parse_arg_spec(arg_spec)
         if is_exported:
             exported_names.append(name)
 
