@@ -424,7 +424,7 @@ class Executor:
         exported_env_vars = {}
 
         for arg_spec in task.args:
-            name, arg_type, default, is_exported = parse_arg_spec(arg_spec)
+            name, arg_type, default, is_exported, _, _ = parse_arg_spec(arg_spec)
             if is_exported:
                 exported_args.add(name)
                 # Get value and convert to string for environment variable

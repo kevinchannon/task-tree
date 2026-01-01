@@ -375,8 +375,8 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
 
     parsed_specs = []
     for spec in arg_specs:
-        name, arg_type, default, is_exported = parse_arg_spec(spec)
-        parsed_specs.append((name, arg_type, default, is_exported))
+        name, arg_type, default, is_exported, min_val, max_val = parse_arg_spec(spec)
+        parsed_specs.append((name, arg_type, default, is_exported, min_val, max_val))
 
     args_dict = {}
     positional_index = 0
@@ -390,19 +390,19 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
             if spec is None:
                 console.print(f"[red]Unknown argument: {arg_name}[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default, is_exported = spec
+            name, arg_type, default, is_exported, min_val, max_val = spec
         else:
             # Positional argument
             if positional_index >= len(parsed_specs):
                 console.print(f"[red]Too many arguments[/red]")
                 raise typer.Exit(1)
-            name, arg_type, default, is_exported = parsed_specs[positional_index]
+            name, arg_type, default, is_exported, min_val, max_val = parsed_specs[positional_index]
             arg_value = value_str
             positional_index += 1
 
         # Convert value to appropriate type (exported args are always strings)
         try:
-            click_type = get_click_type(arg_type)
+            click_type = get_click_type(arg_type, min_val=min_val, max_val=max_val)
             converted_value = click_type.convert(arg_value, None, None)
             args_dict[name] = converted_value
         except Exception as e:
@@ -410,11 +410,11 @@ def _parse_task_args(arg_specs: list[str], arg_values: list[str]) -> dict[str, A
             raise typer.Exit(1)
 
     # Fill in defaults for missing arguments
-    for name, arg_type, default, is_exported in parsed_specs:
+    for name, arg_type, default, is_exported, min_val, max_val in parsed_specs:
         if name not in args_dict:
             if default is not None:
                 try:
-                    click_type = get_click_type(arg_type)
+                    click_type = get_click_type(arg_type, min_val=min_val, max_val=max_val)
                     args_dict[name] = click_type.convert(default, None, None)
                 except Exception as e:
                     console.print(f"[red]Invalid default value for {name}: {e}[/red]")
