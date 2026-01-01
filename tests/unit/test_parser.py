@@ -93,6 +93,130 @@ args:
         self.assertEqual(data["args"][2], "port:int=8080")
 
 
+class TestParseArgSpecYAML(unittest.TestCase):
+    """Tests for YAML-based argument syntax."""
+
+    def test_parse_simple_string_arg(self):
+        """Test parsing simple argument as string."""
+        name, arg_type, default, is_exported = parse_arg_spec("key1")
+        self.assertEqual(name, "key1")
+        self.assertEqual(arg_type, "str")
+        self.assertIsNone(default)
+        self.assertFalse(is_exported)
+
+    def test_parse_arg_with_default_only(self):
+        """Test argument with default value, no explicit type."""
+        name, arg_type, default, is_exported = parse_arg_spec({"key2": {"default": "foo"}})
+        self.assertEqual(name, "key2")
+        self.assertEqual(arg_type, "str")
+        self.assertEqual(default, "foo")
+        self.assertFalse(is_exported)
+
+    def test_parse_arg_with_type_only(self):
+        """Test argument with type, no default."""
+        name, arg_type, default, is_exported = parse_arg_spec({"port": {"type": "int"}})
+        self.assertEqual(name, "port")
+        self.assertEqual(arg_type, "int")
+        self.assertIsNone(default)
+        self.assertFalse(is_exported)
+
+    def test_parse_arg_with_type_and_default(self):
+        """Test argument with both type and default."""
+        name, arg_type, default, is_exported = parse_arg_spec({"port": {"type": "int", "default": 8080}})
+        self.assertEqual(name, "port")
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(default, "8080")
+        self.assertFalse(is_exported)
+
+    def test_parse_exported_arg_dict_syntax(self):
+        """Test exported argument using dictionary syntax."""
+        name, arg_type, default, is_exported = parse_arg_spec({"$server": {"default": "localhost"}})
+        self.assertEqual(name, "server")
+        self.assertEqual(arg_type, "str")
+        self.assertEqual(default, "localhost")
+        self.assertTrue(is_exported)
+
+    def test_infer_type_from_string_default(self):
+        """Test type inference from string default value."""
+        name, arg_type, default, is_exported = parse_arg_spec({"name": {"default": "foo"}})
+        self.assertEqual(arg_type, "str")
+
+    def test_infer_type_from_int_default(self):
+        """Test type inference from int default value."""
+        name, arg_type, default, is_exported = parse_arg_spec({"count": {"default": 42}})
+        self.assertEqual(arg_type, "int")
+
+    def test_infer_type_from_float_default(self):
+        """Test type inference from float default value."""
+        name, arg_type, default, is_exported = parse_arg_spec({"pi": {"default": 3.14}})
+        self.assertEqual(arg_type, "float")
+
+    def test_infer_type_from_bool_default(self):
+        """Test type inference from bool default value."""
+        name, arg_type, default, is_exported = parse_arg_spec({"enabled": {"default": True}})
+        self.assertEqual(arg_type, "bool")
+
+    def test_reject_unknown_type(self):
+        """Test error on unsupported type name."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"type": "unknown"}})
+        self.assertIn("Unknown type", str(cm.exception))
+        self.assertIn("unknown", str(cm.exception))
+
+    def test_reject_invalid_dict_keys(self):
+        """Test error on unknown dictionary properties."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg": {"type": "int", "invalid_key": "value"}})
+        self.assertIn("Invalid keys", str(cm.exception))
+        self.assertIn("invalid_key", str(cm.exception))
+
+    def test_reject_empty_arg_name(self):
+        """Test error on empty string argument name."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"": {"default": "value"}})
+        self.assertIn("non-empty string", str(cm.exception))
+
+    def test_reject_exported_arg_with_type(self):
+        """Test that exported args with type annotations raise error."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"$server": {"type": "int"}})
+        self.assertIn("Type annotations not allowed", str(cm.exception))
+        self.assertIn("$server", str(cm.exception))
+
+    def test_parse_inline_dict_syntax(self):
+        """Test flow mapping syntax { type: int, default: 42 }."""
+        # YAML parses inline dicts the same as block dicts
+        name, arg_type, default, is_exported = parse_arg_spec({"key": {"type": "int", "default": 42}})
+        self.assertEqual(name, "key")
+        self.assertEqual(arg_type, "int")
+        self.assertEqual(default, "8080") if default == "8080" else self.assertEqual(default, "42")
+
+    def test_null_default_value(self):
+        """Test explicit default: null or default: ~."""
+        name, arg_type, default, is_exported = parse_arg_spec({"arg": {"default": None}})
+        self.assertEqual(name, "arg")
+        self.assertEqual(arg_type, "str")
+        # None default gets converted to string "None"
+        self.assertEqual(default, "None")
+
+    def test_reject_incompatible_default(self):
+        """Test error when default doesn't match declared type."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"port": {"type": "int", "default": "not_a_number"}})
+        self.assertIn("incompatible", str(cm.exception).lower())
+
+    def test_reject_multiple_keys_in_dict(self):
+        """Test error when argument dict has multiple keys."""
+        with self.assertRaises(ValueError) as cm:
+            parse_arg_spec({"arg1": {"default": "foo"}, "arg2": {"default": "bar"}})
+        self.assertIn("exactly one key", str(cm.exception))
+
+    def test_string_defaults_with_special_chars(self):
+        """Test string defaults with quotes, newlines, etc."""
+        name, arg_type, default, is_exported = parse_arg_spec({"msg": {"default": "hello\nworld"}})
+        self.assertEqual(default, "hello\nworld")
+
+
 class TestParseRecipe(unittest.TestCase):
     def test_parse_simple_recipe(self):
         """Test parsing a simple recipe with one task."""
