@@ -77,6 +77,28 @@ class Task:
 
 
 @dataclass
+class ArgSpec:
+    """Represents a parsed argument specification.
+
+    Attributes:
+        name: Argument name
+        arg_type: Type of the argument (str, int, float, bool, path)
+        default: Default value as a string (None if no default)
+        is_exported: Whether the argument is exported as an environment variable
+        min_val: Minimum value for numeric arguments (None if not specified)
+        max_val: Maximum value for numeric arguments (None if not specified)
+        choices: List of valid choices for the argument (None if not specified)
+    """
+    name: str
+    arg_type: str
+    default: str | None = None
+    is_exported: bool = False
+    min_val: int | float | None = None
+    max_val: int | float | None = None
+    choices: list[Any] | None = None
+
+
+@dataclass
 class Recipe:
     """Represents a parsed recipe file with all tasks."""
 
@@ -1150,9 +1172,9 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
     # Parse all exported arg names
     exported_names = []
     for arg_spec in args:
-        name, _, _, is_exported, _, _, _ = parse_arg_spec(arg_spec)
-        if is_exported:
-            exported_names.append(name)
+        parsed = parse_arg_spec(arg_spec)
+        if parsed.is_exported:
+            exported_names.append(parsed.name)
 
     # Check for case collisions
     seen_lower = {}
@@ -1172,7 +1194,7 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
             seen_lower[lower_name] = name
 
 
-def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool, int | float | None, int | float | None, list[Any] | None]:
+def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
     """Parse argument specification from YAML.
 
     Supports both string format and dictionary format:
@@ -1194,19 +1216,19 @@ def parse_arg_spec(arg_spec: str | dict) -> tuple[str, str, str | None, bool, in
         arg_spec: Argument specification (string or dict with single key)
 
     Returns:
-        Tuple of (name, type, default, is_exported, min, max, choices)
+        ArgSpec object containing parsed argument information
 
     Examples:
         >>> parse_arg_spec("environment")
-        ('environment', 'str', None, False, None, None, None)
+        ArgSpec(name='environment', arg_type='str', default=None, is_exported=False, min_val=None, max_val=None, choices=None)
         >>> parse_arg_spec({"key2": {"default": "foo"}})
-        ('key2', 'str', 'foo', False, None, None, None)
+        ArgSpec(name='key2', arg_type='str', default='foo', is_exported=False, min_val=None, max_val=None, choices=None)
         >>> parse_arg_spec({"key3": {"type": "int", "default": 42}})
-        ('key3', 'int', '42', False, None, None, None)
+        ArgSpec(name='key3', arg_type='int', default='42', is_exported=False, min_val=None, max_val=None, choices=None)
         >>> parse_arg_spec({"replicas": {"type": "int", "min": 1, "max": 100}})
-        ('replicas', 'int', None, False, 1, 100, None)
+        ArgSpec(name='replicas', arg_type='int', default=None, is_exported=False, min_val=1, max_val=100, choices=None)
         >>> parse_arg_spec({"env": {"type": "str", "choices": ["dev", "prod"]}})
-        ('env', 'str', None, False, None, None, ['dev', 'prod'])
+        ArgSpec(name='env', arg_type='str', default=None, is_exported=False, min_val=None, max_val=None, choices=['dev', 'prod'])
 
     Raises:
         ValueError: If argument specification is invalid
@@ -1500,4 +1522,12 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> tuple[str
         # None remains None (not the string "None")
         default_str = None
 
-    return arg_name, arg_type, default_str, is_exported, min_val, max_val, choices
+    return ArgSpec(
+        name=arg_name,
+        arg_type=arg_type,
+        default=default_str,
+        is_exported=is_exported,
+        min_val=min_val,
+        max_val=max_val,
+        choices=choices
+    )
