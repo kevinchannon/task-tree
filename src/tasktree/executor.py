@@ -438,18 +438,21 @@ class Executor:
         for name, task_args in execution_order:
             task = self.recipe.tasks[name]
 
+            # Convert None to {} for internal use (None is used to distinguish simple deps in graph)
+            args_dict_for_execution = task_args if task_args is not None else {}
+
             # Check if task needs to run (based on CURRENT filesystem state)
-            status = self.check_task_status(task, task_args, force=force)
+            status = self.check_task_status(task, args_dict_for_execution, force=force)
 
             # Use a key that includes args for status tracking
             # Only include regular (non-exported) args in status key for parameterized dependencies
             # For the root task (invoked from CLI), status key is always just the task name
             # For dependencies with parameterized invocations, include the regular args
             is_root_task = (name == task_name)
-            if not is_root_task and task_args and self._has_regular_args(task):
+            if not is_root_task and args_dict_for_execution and self._has_regular_args(task):
                 import json
                 # Filter to only include regular (non-exported) args
-                regular_args = self._filter_regular_args(task, task_args)
+                regular_args = self._filter_regular_args(task, args_dict_for_execution)
                 if regular_args:
                     args_str = json.dumps(regular_args, sort_keys=True, separators=(",", ":"))
                     status_key = f"{name}({args_str})"
@@ -469,7 +472,7 @@ class Executor:
                         file=sys.stderr,
                     )
 
-                self._run_task(task, task_args)
+                self._run_task(task, args_dict_for_execution)
 
         return statuses
 
