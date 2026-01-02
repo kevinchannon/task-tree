@@ -29,7 +29,7 @@ class TaskNode:
 
     def __init__(self, task_name: str, args: dict[str, Any] | None = None):
         self.task_name = task_name
-        self.args = args or {}
+        self.args = args  # Keep None as None
 
     def __hash__(self):
         """Hash based on task name and sorted args."""
@@ -87,12 +87,11 @@ def resolve_execution_order(
 
     def get_or_create_node(task_name: str, args: dict[str, Any] | None) -> TaskNode:
         """Get existing node or create new one for this invocation."""
-        args_dict = args or {}
-        args_hash = hash_args(args_dict) if args_dict else ""
+        args_hash = hash_args(args) if args else ""
         key = (task_name, args_hash)
 
         if key not in seen_invocations:
-            seen_invocations[key] = TaskNode(task_name, args_dict)
+            seen_invocations[key] = TaskNode(task_name, args)
         return seen_invocations[key]
 
     def build_graph(node: TaskNode) -> None:

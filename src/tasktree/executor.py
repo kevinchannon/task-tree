@@ -64,6 +64,34 @@ class Executor:
         self.state = state_manager
         self.docker_manager = docker_module.DockerManager(recipe.project_root)
 
+    def _has_regular_args(self, task: Task) -> bool:
+        """Check if a task has any regular (non-exported) arguments.
+
+        Args:
+            task: Task to check
+
+        Returns:
+            True if task has at least one regular (non-exported) argument, False otherwise
+        """
+        if not task.args:
+            return False
+
+        # Check if any arg is not exported (doesn't start with $)
+        for arg_spec in task.args:
+            # Handle both string and dict arg specs
+            if isinstance(arg_spec, str):
+                # Remove default value part if present
+                arg_name = arg_spec.split('=')[0].split(':')[0].strip()
+                if not arg_name.startswith('$'):
+                    return True
+            elif isinstance(arg_spec, dict):
+                # Dict format: { argname: { ... } } or { $argname: { ... } }
+                for key in arg_spec.keys():
+                    if not key.startswith('$'):
+                        return True
+
+        return False
+
     def _collect_early_builtin_variables(self, task: Task, timestamp: datetime) -> dict[str, str]:
         """Collect built-in variables that don't depend on working_dir.
 
@@ -386,8 +414,9 @@ class Executor:
             status = self.check_task_status(task, task_args, force=force)
 
             # Use a key that includes args for status tracking
-            # Use JSON serialization to avoid hash collisions
-            if task_args:
+            # Only include args in status key if task has regular (non-exported) args
+            # Exported args (those starting with $) should not affect status key
+            if task_args and self._has_regular_args(task):
                 import json
                 args_str = json.dumps(task_args, sort_keys=True, separators=(",", ":"))
                 status_key = f"{name}({args_str})"
