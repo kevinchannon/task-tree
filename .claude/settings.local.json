@@ -7,7 +7,14 @@
       "Bash(uv run python:*)",
       "Bash(uv pip install:*)",
       "Bash(grep:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(docker --version:*)",
+      "Bash(python -m tasktree:*)",
+      "Bash(python -m tasktree.cli:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(tt --help:*)",
+      "Bash(head:*)"
     ]
   }
 }
