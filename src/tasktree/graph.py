@@ -33,6 +33,7 @@ class TaskNode:
 
     def __hash__(self):
         """Hash based on task name and sorted args."""
+        # Treat None and {} as equivalent for hashing
         if not self.args:
             return hash(self.task_name)
         args_hash = hash_args(self.args)
@@ -42,7 +43,10 @@ class TaskNode:
         """Equality based on task name and args."""
         if not isinstance(other, TaskNode):
             return False
-        return self.task_name == other.task_name and self.args == other.args
+        # Treat None and {} as equivalent
+        self_args = self.args if self.args else {}
+        other_args = other.args if other.args else {}
+        return self.task_name == other.task_name and self_args == other_args
 
     def __repr__(self):
         if not self.args:

@@ -50,8 +50,8 @@ class TestParameterizedGraphConstruction(unittest.TestCase):
 
         order = resolve_execution_order(recipe, "test")
         self.assertEqual(len(order), 2)
-        self.assertEqual(order[0], ("build", {}))
-        self.assertEqual(order[1], ("test", {}))
+        self.assertEqual(order[0], ("build", None))
+        self.assertEqual(order[1], ("test", None))
 
     def test_dependency_with_positional_args(self):
         """Test dependency with positional arguments."""

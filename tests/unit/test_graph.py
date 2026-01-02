@@ -20,7 +20,7 @@ class TestResolveExecutionOrder(unittest.TestCase):
         recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
 
         order = resolve_execution_order(recipe, "build")
-        self.assertEqual(order, [("build", {})])
+        self.assertEqual(order, [("build", None)])
 
     def test_linear_dependencies(self):
         """Test execution order for linear dependency chain."""
@@ -32,7 +32,7 @@ class TestResolveExecutionOrder(unittest.TestCase):
         recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
 
         order = resolve_execution_order(recipe, "test")
-        self.assertEqual(order, [("lint", {}), ("build", {}), ("test", {})])
+        self.assertEqual(order, [("lint", None), ("build", None), ("test", None)])
 
     def test_diamond_dependencies(self):
         """Test execution order for diamond dependency pattern."""
