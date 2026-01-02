@@ -56,7 +56,7 @@ class Task:
     name: str
     cmd: str
     desc: str = ""
-    deps: list[str] = field(default_factory=list)
+    deps: list[str | dict[str, Any]] = field(default_factory=list)  # Can be strings or dicts with args
     inputs: list[str] = field(default_factory=list)
     outputs: list[str] = field(default_factory=list)
     working_dir: str = ""
@@ -74,6 +74,25 @@ class Task:
             self.outputs = [self.outputs]
         if isinstance(self.args, str):
             self.args = [self.args]
+
+
+@dataclass
+class DependencyInvocation:
+    """Represents a task dependency invocation with optional arguments.
+
+    Attributes:
+        task_name: Name of the dependency task
+        args: Dictionary of argument names to values (None if no args specified)
+    """
+    task_name: str
+    args: dict[str, Any] | None = None
+
+    def __str__(self) -> str:
+        """String representation for display."""
+        if not self.args:
+            return self.task_name
+        args_str = ", ".join(f"{k}={v}" for k, v in self.args.items())
+        return f"{self.task_name}({args_str})"
 
 
 @dataclass
@@ -731,10 +750,16 @@ def _resolve_variable_value(
         # Validate and stringify the value
         string_value = validator.convert(raw_value, None, None)
 
+        # Convert to string (lowercase for booleans to match YAML/shell conventions)
+        if isinstance(string_value, bool):
+            string_value_str = str(string_value).lower()
+        else:
+            string_value_str = str(string_value)
+
         # Substitute any {{ var.name }} references in the string value
         from tasktree.substitution import substitute_variables
         try:
-            resolved_value = substitute_variables(str(string_value), resolved)
+            resolved_value = substitute_variables(string_value_str, resolved)
         except ValueError as e:
             # Check if the undefined variable is in the resolution stack (circular reference)
             error_msg = str(e)
@@ -1117,18 +1142,40 @@ def _parse_file(
             # 2. It starts with a local import namespace (like "base.setup" when "base" is imported)
             rewritten_deps = []
             for dep in deps:
-                if "." not in dep:
-                    # Simple name - always prefix
-                    rewritten_deps.append(f"{namespace}.{dep}")
-                else:
-                    # Check if it starts with a local import namespace
-                    dep_root = dep.split(".", 1)[0]
-                    if dep_root in local_import_namespaces:
-                        # Local import reference - prefix it
+                if isinstance(dep, str):
+                    # Simple string dependency
+                    if "." not in dep:
+                        # Simple name - always prefix
                         rewritten_deps.append(f"{namespace}.{dep}")
                     else:
-                        # External reference - keep as-is
-                        rewritten_deps.append(dep)
+                        # Check if it starts with a local import namespace
+                        dep_root = dep.split(".", 1)[0]
+                        if dep_root in local_import_namespaces:
+                            # Local import reference - prefix it
+                            rewritten_deps.append(f"{namespace}.{dep}")
+                        else:
+                            # External reference - keep as-is
+                            rewritten_deps.append(dep)
+                elif isinstance(dep, dict):
+                    # Dict dependency with args - rewrite the task name key
+                    rewritten_dep = {}
+                    for task_name, args in dep.items():
+                        if "." not in task_name:
+                            # Simple name - prefix it
+                            rewritten_dep[f"{namespace}.{task_name}"] = args
+                        else:
+                            # Check if it starts with a local import namespace
+                            dep_root = task_name.split(".", 1)[0]
+                            if dep_root in local_import_namespaces:
+                                # Local import reference - prefix it
+                                rewritten_dep[f"{namespace}.{task_name}"] = args
+                            else:
+                                # External reference - keep as-is
+                                rewritten_dep[task_name] = args
+                    rewritten_deps.append(rewritten_dep)
+                else:
+                    # Unknown type - keep as-is
+                    rewritten_deps.append(dep)
             deps = rewritten_deps
 
         task = Task(
@@ -1539,3 +1586,208 @@ def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> ArgSpec:
         max_val=max_val,
         choices=choices
     )
+
+
+def parse_dependency_spec(dep_spec: str | dict[str, Any], recipe: Recipe) -> DependencyInvocation:
+    """Parse a dependency specification into a DependencyInvocation.
+
+    Supports three forms:
+    1. Simple string: "task_name" -> DependencyInvocation(task_name, None)
+    2. Positional args: {"task_name": [arg1, arg2]} -> DependencyInvocation(task_name, {name1: arg1, name2: arg2})
+    3. Named args: {"task_name": {arg1: val1}} -> DependencyInvocation(task_name, {arg1: val1})
+
+    Args:
+        dep_spec: Dependency specification (string or dict)
+        recipe: Recipe containing task definitions (for arg normalization)
+
+    Returns:
+        DependencyInvocation object with normalized args
+
+    Raises:
+        ValueError: If dependency specification is invalid
+    """
+    # Simple string case
+    if isinstance(dep_spec, str):
+        return DependencyInvocation(task_name=dep_spec, args=None)
+
+    # Dictionary case
+    if not isinstance(dep_spec, dict):
+        raise ValueError(
+            f"Dependency must be a string or dictionary, got: {type(dep_spec).__name__}"
+        )
+
+    # Validate dict has exactly one key
+    if len(dep_spec) != 1:
+        raise ValueError(
+            f"Dependency dictionary must have exactly one key (the task name), got: {list(dep_spec.keys())}"
+        )
+
+    task_name, arg_spec = next(iter(dep_spec.items()))
+
+    # Validate task name
+    if not isinstance(task_name, str) or not task_name:
+        raise ValueError(
+            f"Dependency task name must be a non-empty string, got: {task_name!r}"
+        )
+
+    # Check for empty list (explicitly disallowed)
+    if isinstance(arg_spec, list) and len(arg_spec) == 0:
+        raise ValueError(
+            f"Empty argument list for dependency '{task_name}' is not allowed.\n"
+            f"Use simple string form instead: '{task_name}'"
+        )
+
+    # Positional args (list)
+    if isinstance(arg_spec, list):
+        return _parse_positional_dependency_args(task_name, arg_spec, recipe)
+
+    # Named args (dict)
+    if isinstance(arg_spec, dict):
+        return _parse_named_dependency_args(task_name, arg_spec, recipe)
+
+    # Invalid type
+    raise ValueError(
+        f"Dependency arguments for '{task_name}' must be a list (positional) or dict (named), "
+        f"got: {type(arg_spec).__name__}"
+    )
+
+
+def _get_validated_task(task_name: str, recipe: Recipe) -> Task:
+    """Get and validate that a task exists in the recipe.
+
+    Args:
+        task_name: Name of the task to retrieve
+        recipe: Recipe containing task definitions
+
+    Returns:
+        The validated Task object
+
+    Raises:
+        ValueError: If task is not found
+    """
+    task = recipe.get_task(task_name)
+    if task is None:
+        raise ValueError(f"Dependency task not found: {task_name}")
+    return task
+
+
+def _parse_positional_dependency_args(
+    task_name: str, args_list: list[Any], recipe: Recipe
+) -> DependencyInvocation:
+    """Parse positional dependency arguments.
+
+    Args:
+        task_name: Name of the dependency task
+        args_list: List of positional argument values
+        recipe: Recipe containing task definitions
+
+    Returns:
+        DependencyInvocation with normalized named args
+
+    Raises:
+        ValueError: If validation fails
+    """
+    # Get the task to validate against
+    task = _get_validated_task(task_name, recipe)
+
+    # Parse task's arg specs
+    if not task.args:
+        raise ValueError(
+            f"Task '{task_name}' takes no arguments, but {len(args_list)} were provided"
+        )
+
+    parsed_specs = [parse_arg_spec(spec) for spec in task.args]
+
+    # Check positional count doesn't exceed task's arg count
+    if len(args_list) > len(parsed_specs):
+        raise ValueError(
+            f"Task '{task_name}' takes {len(parsed_specs)} arguments, got {len(args_list)}"
+        )
+
+    # Map positional args to names with type conversion
+    args_dict = {}
+    for i, value in enumerate(args_list):
+        spec = parsed_specs[i]
+        if isinstance(value, str):
+            # Convert string values using type validator
+            click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+            args_dict[spec.name] = click_type.convert(value, None, None)
+        else:
+            # Value is already typed (e.g., bool, int from YAML)
+            args_dict[spec.name] = value
+
+    # Fill in defaults for remaining args
+    for i in range(len(args_list), len(parsed_specs)):
+        spec = parsed_specs[i]
+        if spec.default is not None:
+            # Defaults in task specs are always strings, convert them
+            click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+            args_dict[spec.name] = click_type.convert(spec.default, None, None)
+        else:
+            raise ValueError(
+                f"Task '{task_name}' requires argument '{spec.name}' (no default provided)"
+            )
+
+    return DependencyInvocation(task_name=task_name, args=args_dict)
+
+
+def _parse_named_dependency_args(
+    task_name: str, args_dict: dict[str, Any], recipe: Recipe
+) -> DependencyInvocation:
+    """Parse named dependency arguments.
+
+    Args:
+        task_name: Name of the dependency task
+        args_dict: Dictionary of argument names to values
+        recipe: Recipe containing task definitions
+
+    Returns:
+        DependencyInvocation with normalized args (defaults filled)
+
+    Raises:
+        ValueError: If validation fails
+    """
+    # Get the task to validate against
+    task = _get_validated_task(task_name, recipe)
+
+    # Parse task's arg specs
+    if not task.args:
+        if args_dict:
+            raise ValueError(
+                f"Task '{task_name}' takes no arguments, but {len(args_dict)} were provided"
+            )
+        return DependencyInvocation(task_name=task_name, args={})
+
+    parsed_specs = [parse_arg_spec(spec) for spec in task.args]
+    spec_map = {spec.name: spec for spec in parsed_specs}
+
+    # Validate all provided arg names exist
+    for arg_name in args_dict:
+        if arg_name not in spec_map:
+            raise ValueError(
+                f"Task '{task_name}' has no argument named '{arg_name}'"
+            )
+
+    # Build normalized args dict with defaults
+    normalized_args = {}
+    for spec in parsed_specs:
+        if spec.name in args_dict:
+            # Use provided value with type conversion (only convert strings)
+            value = args_dict[spec.name]
+            if isinstance(value, str):
+                click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+                normalized_args[spec.name] = click_type.convert(value, None, None)
+            else:
+                # Value is already typed (e.g., bool, int from YAML)
+                normalized_args[spec.name] = value
+        elif spec.default is not None:
+            # Use default value (defaults are always strings in task specs)
+            click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+            normalized_args[spec.name] = click_type.convert(spec.default, None, None)
+        else:
+            # Required arg not provided
+            raise ValueError(
+                f"Task '{task_name}' requires argument '{spec.name}' (no default provided)"
+            )
+
+    return DependencyInvocation(task_name=task_name, args=normalized_args)

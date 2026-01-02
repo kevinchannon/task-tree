@@ -57,7 +57,7 @@ class TestTaskStatus(unittest.TestCase):
             from tasktree.hasher import hash_task, make_cache_key
 
             task = Task(name="build", cmd="cat input.txt", inputs=["input.txt"], outputs=["output.txt"])
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with current mtime
@@ -71,7 +71,7 @@ class TestTaskStatus(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertFalse(status.will_run)
             self.assertEqual(status.reason, "fresh")
 
@@ -161,7 +161,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run
@@ -174,7 +174,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertFalse(status.will_run)
             self.assertEqual(status.reason, "fresh")
 
@@ -194,7 +194,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run
@@ -207,7 +207,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertTrue(status.will_run)
             self.assertEqual(status.reason, "outputs_missing")
             self.assertEqual(status.changed_files, ["output.txt"])
@@ -230,7 +230,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test",
                 outputs=["output1.txt", "output2.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -242,7 +242,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertTrue(status.will_run)
             self.assertEqual(status.reason, "outputs_missing")
             self.assertIn("output2.txt", status.changed_files)
@@ -263,7 +263,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertTrue(status.will_run)
             self.assertEqual(status.reason, "never_run")  # Not outputs_missing
 
@@ -279,7 +279,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertTrue(status.will_run)
             self.assertEqual(status.reason, "no_outputs")  # Always runs
 
@@ -305,7 +305,7 @@ class TestMissingOutputs(unittest.TestCase):
                 working_dir="subdir",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -317,7 +317,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertFalse(status.will_run)
             self.assertEqual(status.reason, "fresh")
 
@@ -338,7 +338,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="create-deb",
                 outputs=["dist/*.deb"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -350,7 +350,7 @@ class TestMissingOutputs(unittest.TestCase):
             recipe = Recipe(tasks=tasks, project_root=project_root, recipe_path=project_root / "tasktree.yaml")
             executor = Executor(recipe, state_manager)
 
-            status = executor.check_task_status(task, {}, {})
+            status = executor.check_task_status(task, {})
             self.assertTrue(status.will_run)
             self.assertEqual(status.reason, "outputs_missing")
 
@@ -725,7 +725,7 @@ class TestOnlyMode(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run

@@ -64,6 +64,62 @@ class Executor:
         self.state = state_manager
         self.docker_manager = docker_module.DockerManager(recipe.project_root)
 
+    def _has_regular_args(self, task: Task) -> bool:
+        """Check if a task has any regular (non-exported) arguments.
+
+        Args:
+            task: Task to check
+
+        Returns:
+            True if task has at least one regular (non-exported) argument, False otherwise
+        """
+        if not task.args:
+            return False
+
+        # Check if any arg is not exported (doesn't start with $)
+        for arg_spec in task.args:
+            # Handle both string and dict arg specs
+            if isinstance(arg_spec, str):
+                # Remove default value part if present
+                arg_name = arg_spec.split('=')[0].split(':')[0].strip()
+                if not arg_name.startswith('$'):
+                    return True
+            elif isinstance(arg_spec, dict):
+                # Dict format: { argname: { ... } } or { $argname: { ... } }
+                for key in arg_spec.keys():
+                    if not key.startswith('$'):
+                        return True
+
+        return False
+
+    def _filter_regular_args(self, task: Task, task_args: dict[str, Any]) -> dict[str, Any]:
+        """Filter task_args to only include regular (non-exported) arguments.
+
+        Args:
+            task: Task definition
+            task_args: Dictionary of all task arguments
+
+        Returns:
+            Dictionary containing only regular (non-exported) arguments
+        """
+        if not task.args or not task_args:
+            return {}
+
+        # Build set of exported arg names (without the $ prefix)
+        exported_names = set()
+        for arg_spec in task.args:
+            if isinstance(arg_spec, str):
+                arg_name = arg_spec.split('=')[0].split(':')[0].strip()
+                if arg_name.startswith('$'):
+                    exported_names.add(arg_name[1:])  # Remove $ prefix
+            elif isinstance(arg_spec, dict):
+                for key in arg_spec.keys():
+                    if key.startswith('$'):
+                        exported_names.add(key[1:])  # Remove $ prefix
+
+        # Filter out exported args
+        return {k: v for k, v in task_args.items() if k not in exported_names}
+
     def _collect_early_builtin_variables(self, task: Task, timestamp: datetime) -> dict[str, str]:
         """Collect built-in variables that don't depend on working_dir.
 
@@ -277,9 +333,9 @@ class Executor:
                 reason="forced",
             )
 
-        # Compute hashes (include effective environment)
+        # Compute hashes (include effective environment and dependencies)
         effective_env = self._get_effective_env_name(task)
-        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env)
+        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env, task.deps)
         args_hash = hash_args(args_dict) if args_dict else None
         cache_key = make_cache_key(task_hash, args_hash)
 
@@ -372,22 +428,39 @@ class Executor:
         # Resolve execution order
         if only:
             # Only execute the target task, skip dependencies
-            execution_order = [task_name]
+            execution_order = [(task_name, args_dict)]
         else:
             # Execute task and all dependencies
-            execution_order = resolve_execution_order(self.recipe, task_name)
+            execution_order = resolve_execution_order(self.recipe, task_name, args_dict)
 
         # Single phase: Check and execute incrementally
         statuses: dict[str, TaskStatus] = {}
-        for name in execution_order:
+        for name, task_args in execution_order:
             task = self.recipe.tasks[name]
 
-            # Determine task-specific args (only for target task)
-            task_args = args_dict if name == task_name else {}
+            # Convert None to {} for internal use (None is used to distinguish simple deps in graph)
+            args_dict_for_execution = task_args if task_args is not None else {}
 
             # Check if task needs to run (based on CURRENT filesystem state)
-            status = self.check_task_status(task, task_args, force=force)
-            statuses[name] = status
+            status = self.check_task_status(task, args_dict_for_execution, force=force)
+
+            # Use a key that includes args for status tracking
+            # Only include regular (non-exported) args in status key for parameterized dependencies
+            # For the root task (invoked from CLI), status key is always just the task name
+            # For dependencies with parameterized invocations, include the regular args
+            is_root_task = (name == task_name)
+            if not is_root_task and args_dict_for_execution and self._has_regular_args(task):
+                import json
+                # Filter to only include regular (non-exported) args
+                regular_args = self._filter_regular_args(task, args_dict_for_execution)
+                if regular_args:
+                    args_str = json.dumps(regular_args, sort_keys=True, separators=(",", ":"))
+                    status_key = f"{name}({args_str})"
+                else:
+                    status_key = name
+            else:
+                status_key = name
+            statuses[status_key] = status
 
             # Execute immediately if needed
             if status.will_run:
@@ -399,7 +472,7 @@ class Executor:
                         file=sys.stderr,
                     )
 
-                self._run_task(task, task_args)
+                self._run_task(task, args_dict_for_execution)
 
         return statuses
 
@@ -962,9 +1035,9 @@ class Executor:
             task: Task that was executed
             args_dict: Arguments used for execution
         """
-        # Compute hashes (include effective environment)
+        # Compute hashes (include effective environment and dependencies)
         effective_env = self._get_effective_env_name(task)
-        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env)
+        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env, task.deps)
         args_hash = hash_args(args_dict) if args_dict else None
         cache_key = make_cache_key(task_hash, args_hash)
 

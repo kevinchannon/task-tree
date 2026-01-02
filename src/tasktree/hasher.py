@@ -37,7 +37,27 @@ def _normalize_choices_lists(args: list[str | dict[str, Any]]) ->  list[str | di
     return normalized_args
 
 
-def hash_task(cmd: str, outputs: list[str], working_dir: str, args: list[str | dict[str, Any]], env: str = "") -> str:
+def hash_task(
+    cmd: str,
+    outputs: list[str],
+    working_dir: str,
+    args: list[str | dict[str, Any]],
+    env: str = "",
+    deps: list[str | dict[str, Any]] | None = None
+) -> str:
+    """Hash task definition including dependencies.
+
+    Args:
+        cmd: Task command
+        outputs: Task outputs
+        working_dir: Working directory
+        args: Task argument specifications
+        env: Environment name
+        deps: Dependency specifications (optional, for dependency hash)
+
+    Returns:
+        8-character hash of task definition
+    """
     data = {
         "cmd": cmd,
         "outputs": sorted(outputs),
@@ -45,6 +65,23 @@ def hash_task(cmd: str, outputs: list[str], working_dir: str, args: list[str | d
         "args": sorted(_normalize_choices_lists(args), key=_arg_sort_key),
         "env": env,
     }
+
+    # Include dependency invocation signatures if provided
+    if deps is not None:
+        # Normalize deps for hashing using JSON serialization for consistency
+        normalized_deps = []
+        for dep in deps:
+            if isinstance(dep, str):
+                # Simple string dependency
+                normalized_deps.append(dep)
+            elif isinstance(dep, dict):
+                # Dict dependency with args - normalize to canonical form
+                # Sort the dict to ensure consistent hashing
+                normalized_deps.append(dict(sorted(dep.items())))
+            else:
+                normalized_deps.append(dep)
+        # Sort using JSON serialization for consistent ordering
+        data["deps"] = sorted(normalized_deps, key=lambda x: json.dumps(x, sort_keys=True) if isinstance(x, dict) else x)
 
     serialized = json.dumps(data, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()[:8]

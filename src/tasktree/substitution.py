@@ -87,8 +87,11 @@ def substitute_arguments(text: str, args: dict[str, Any], exported_args: set[str
                 f"Required arguments must be provided."
             )
 
-        # Convert to string
-        return str(args[name])
+        # Convert to string (lowercase for booleans to match YAML/shell conventions)
+        value = args[name]
+        if isinstance(value, bool):
+            return str(value).lower()
+        return str(value)
 
     return PLACEHOLDER_PATTERN.sub(replace_match, text)
 
