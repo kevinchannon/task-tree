@@ -1,0 +1,27 @@
+tasks:
+  task_parameterized:
+    args:
+      - mode=debug
+      - verbose=false
+    cmd: echo "mode={{arg.mode}} verbose={{arg.verbose}}"
+
+  task_consumer_implicit:
+    deps:
+      - task_parameterized  # uses defaults
+    cmd: echo "consumer 1"
+
+  task_consumer_explicit:
+    deps:
+      - task_parameterized: {mode: debug, verbose: false}  # explicit defaults
+    cmd: echo "consumer 2"
+
+  task_consumer_different:
+    deps:
+      - task_parameterized: [release, true]  # different values
+    cmd: echo "consumer 3"
+
+  task_multi_invoke:
+    deps:
+      - task_parameterized: [debug]
+      - task_parameterized: [release]
+    cmd: echo "multi"

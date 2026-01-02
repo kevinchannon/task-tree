@@ -399,9 +399,9 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
     state.load()
     executor = Executor(recipe, state)
 
-    # Prune state before execution (compute hashes with effective environment)
+    # Prune state before execution (compute hashes with effective environment and dependencies)
     valid_hashes = {
-        hash_task(t.cmd, t.outputs, t.working_dir, t.args, executor._get_effective_env_name(t))
+        hash_task(t.cmd, t.outputs, t.working_dir, t.args, executor._get_effective_env_name(t), t.deps)
         for t in recipe.tasks.values()
     }
     state.prune(valid_hashes)

@@ -579,6 +579,97 @@ If an exported argument with a default isn't available as an environment variabl
 2. The CLI automatically applies defaults before execution
 3. You can explicitly provide the value: `tt deploy prod-server port=8080`
 
+### Parameterized Dependencies
+
+Dependencies can invoke tasks with specific arguments, enabling flexible and reusable task graphs:
+
+**Syntax:**
+
+```yaml
+tasks:
+  # Task with parameters
+  process:
+    args: [mode, verbose=false]
+    cmd: echo "mode={{arg.mode}} verbose={{arg.verbose}}"
+
+  # Simple dependency (uses defaults)
+  consumer1:
+    deps: [process]  # Equivalent to: process(mode must be provided)
+    cmd: echo "done"
+
+  # Positional arguments
+  consumer2:
+    deps:
+      - process: [debug, true]  # Maps to: mode=debug, verbose=true
+    cmd: echo "done"
+
+  # Named arguments
+  consumer3:
+    deps:
+      - process: {mode: release, verbose: false}
+    cmd: echo "done"
+
+  # Multiple invocations with different args
+  multi_build:
+    deps:
+      - process: [debug]
+      - process: [release]
+    cmd: echo "All builds complete"
+```
+
+**Key behaviors:**
+
+- **Simple string form** (`- task_name`): Uses task defaults for all arguments. Required arguments must have defaults or task invocation fails.
+- **Positional form** (`- task_name: [arg1, arg2]`): Arguments mapped by position. Can omit trailing args if they have defaults.
+- **Named form** (`- task_name: {arg1: val1}`): Arguments mapped by name. Can omit any arg with a default.
+- **Multiple invocations**: Same task with different arguments creates separate graph nodes, each executing independently.
+- **Normalization**: All forms normalized to named arguments with defaults filled before execution.
+- **Cache separation**: `process(debug)` and `process(release)` cache independently.
+
+**Restrictions:**
+
+- **No empty lists**: `- task: []` is invalid (use `- task` instead)
+- **No mixed positional and named**: Choose one form per dependency
+- **Single-key dicts**: `{task1: [x], task2: [y]}` is invalid (multi-key not allowed)
+
+**Validation:**
+
+Validation happens at graph construction time with clear error messages:
+
+```
+Task 'process' takes 2 arguments, got 3
+Task 'build' has no argument named 'mode'
+Task 'deploy' requires argument 'environment' (no default provided)
+```
+
+**Example use cases:**
+
+```yaml
+tasks:
+  # Compile for different platforms
+  compile:
+    args: [target]
+    cmd: cargo build --target {{arg.target}}
+
+  dist:
+    deps:
+      - compile: [x86_64-unknown-linux-gnu]
+      - compile: [aarch64-unknown-linux-gnu]
+    cmd: tar czf dist.tar.gz target/*/release/app
+
+  # Run tests with different configurations
+  test:
+    args: [config]
+    cmd: pytest --config={{arg.config}}
+
+  ci:
+    deps:
+      - test: [unit]
+      - test: [integration]
+      - test: [e2e]
+    cmd: echo "All tests passed"
+```
+
 ## Environment Variables
 
 Task Tree supports reading environment variables in two ways:

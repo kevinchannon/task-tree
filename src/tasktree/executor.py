@@ -277,9 +277,9 @@ class Executor:
                 reason="forced",
             )
 
-        # Compute hashes (include effective environment)
+        # Compute hashes (include effective environment and dependencies)
         effective_env = self._get_effective_env_name(task)
-        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env)
+        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env, task.deps)
         args_hash = hash_args(args_dict) if args_dict else None
         cache_key = make_cache_key(task_hash, args_hash)
 
@@ -372,22 +372,23 @@ class Executor:
         # Resolve execution order
         if only:
             # Only execute the target task, skip dependencies
-            execution_order = [task_name]
+            execution_order = [(task_name, args_dict)]
         else:
             # Execute task and all dependencies
-            execution_order = resolve_execution_order(self.recipe, task_name)
+            execution_order = resolve_execution_order(self.recipe, task_name, args_dict)
 
         # Single phase: Check and execute incrementally
         statuses: dict[str, TaskStatus] = {}
-        for name in execution_order:
+        for name, task_args in execution_order:
             task = self.recipe.tasks[name]
-
-            # Determine task-specific args (only for target task)
-            task_args = args_dict if name == task_name else {}
 
             # Check if task needs to run (based on CURRENT filesystem state)
             status = self.check_task_status(task, task_args, force=force)
-            statuses[name] = status
+
+            # Use a key that includes args for status tracking
+            from tasktree.hasher import hash_args
+            status_key = name if not task_args else f"{name}({hash_args(task_args)})"
+            statuses[status_key] = status
 
             # Execute immediately if needed
             if status.will_run:
@@ -962,9 +963,9 @@ class Executor:
             task: Task that was executed
             args_dict: Arguments used for execution
         """
-        # Compute hashes (include effective environment)
+        # Compute hashes (include effective environment and dependencies)
         effective_env = self._get_effective_env_name(task)
-        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env)
+        task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, effective_env, task.deps)
         args_hash = hash_args(args_dict) if args_dict else None
         cache_key = make_cache_key(task_hash, args_hash)
 
