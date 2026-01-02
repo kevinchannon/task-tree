@@ -750,10 +750,16 @@ def _resolve_variable_value(
         # Validate and stringify the value
         string_value = validator.convert(raw_value, None, None)
 
+        # Convert to string (lowercase for booleans to match YAML/shell conventions)
+        if isinstance(string_value, bool):
+            string_value_str = str(string_value).lower()
+        else:
+            string_value_str = str(string_value)
+
         # Substitute any {{ var.name }} references in the string value
         from tasktree.substitution import substitute_variables
         try:
-            resolved_value = substitute_variables(str(string_value), resolved)
+            resolved_value = substitute_variables(string_value_str, resolved)
         except ValueError as e:
             # Check if the undefined variable is in the resolution stack (circular reference)
             error_msg = str(e)
