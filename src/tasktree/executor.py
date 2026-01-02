@@ -92,6 +92,34 @@ class Executor:
 
         return False
 
+    def _filter_regular_args(self, task: Task, task_args: dict[str, Any]) -> dict[str, Any]:
+        """Filter task_args to only include regular (non-exported) arguments.
+
+        Args:
+            task: Task definition
+            task_args: Dictionary of all task arguments
+
+        Returns:
+            Dictionary containing only regular (non-exported) arguments
+        """
+        if not task.args or not task_args:
+            return {}
+
+        # Build set of exported arg names (without the $ prefix)
+        exported_names = set()
+        for arg_spec in task.args:
+            if isinstance(arg_spec, str):
+                arg_name = arg_spec.split('=')[0].split(':')[0].strip()
+                if arg_name.startswith('$'):
+                    exported_names.add(arg_name[1:])  # Remove $ prefix
+            elif isinstance(arg_spec, dict):
+                for key in arg_spec.keys():
+                    if key.startswith('$'):
+                        exported_names.add(key[1:])  # Remove $ prefix
+
+        # Filter out exported args
+        return {k: v for k, v in task_args.items() if k not in exported_names}
+
     def _collect_early_builtin_variables(self, task: Task, timestamp: datetime) -> dict[str, str]:
         """Collect built-in variables that don't depend on working_dir.
 
@@ -414,12 +442,19 @@ class Executor:
             status = self.check_task_status(task, task_args, force=force)
 
             # Use a key that includes args for status tracking
-            # Only include args in status key if task has regular (non-exported) args
-            # Exported args (those starting with $) should not affect status key
-            if task_args and self._has_regular_args(task):
+            # Only include regular (non-exported) args in status key for parameterized dependencies
+            # For the root task (invoked from CLI), status key is always just the task name
+            # For dependencies with parameterized invocations, include the regular args
+            is_root_task = (name == task_name)
+            if not is_root_task and task_args and self._has_regular_args(task):
                 import json
-                args_str = json.dumps(task_args, sort_keys=True, separators=(",", ":"))
-                status_key = f"{name}({args_str})"
+                # Filter to only include regular (non-exported) args
+                regular_args = self._filter_regular_args(task, task_args)
+                if regular_args:
+                    args_str = json.dumps(regular_args, sort_keys=True, separators=(",", ":"))
+                    status_key = f"{name}({args_str})"
+                else:
+                    status_key = name
             else:
                 status_key = name
             statuses[status_key] = status
