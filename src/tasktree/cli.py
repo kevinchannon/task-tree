@@ -26,11 +26,11 @@ app = typer.Typer(
 console = Console()
 
 
-def _format_task_arguments(arg_specs: list[str]) -> str:
+def _format_task_arguments(arg_specs: list[str | dict]) -> str:
     """Format task arguments for display in list output.
 
     Args:
-        arg_specs: List of argument specifications from task definition
+        arg_specs: List of argument specifications from task definition (strings or dicts)
 
     Returns:
         Formatted string showing arguments with types and defaults
@@ -39,6 +39,7 @@ def _format_task_arguments(arg_specs: list[str]) -> str:
         ["mode", "target"] -> "mode:str target:str"
         ["mode=debug", "target=x86_64"] -> "mode:str [=debug] target:str [=x86_64]"
         ["port:int", "debug:bool=false"] -> "port:int debug:bool [=false]"
+        [{"timeout": {"type": "int", "default": 30}}] -> "timeout:int [=30]"
     """
     if not arg_specs:
         return ""

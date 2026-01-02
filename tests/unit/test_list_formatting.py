@@ -21,109 +21,111 @@ class TestFormatTaskArguments(unittest.TestCase):
     def test_format_single_required_argument(self):
         """Test formatting task with single required argument."""
         result = _format_task_arguments(["environment"])
-        self.assertEqual(result, "environment:str")
+        self.assertEqual(result, "environment[dim]:str[/dim]")
 
     def test_format_single_optional_argument(self):
         """Test formatting task with single optional argument."""
         result = _format_task_arguments(["environment=production"])
-        self.assertIn("environment:str", result)
-        self.assertIn("=production", result)
+        self.assertIn("environment[dim]:str[/dim]", result)
+        self.assertIn("[dim]\\[=production][/dim]", result)
 
     def test_format_multiple_required_arguments(self):
         """Test formatting task with multiple required arguments."""
         result = _format_task_arguments(["mode", "target"])
-        self.assertIn("mode:str", result)
-        self.assertIn("target:str", result)
+        self.assertIn("mode[dim]:str[/dim]", result)
+        self.assertIn("target[dim]:str[/dim]", result)
         # Verify order is preserved
         self.assertTrue(result.index("mode") < result.index("target"))
 
     def test_format_multiple_optional_arguments(self):
         """Test formatting task with multiple optional arguments."""
         result = _format_task_arguments(["mode=debug", "target=x86_64"])
-        self.assertIn("mode:str", result)
-        self.assertIn("=debug", result)
-        self.assertIn("target:str", result)
-        self.assertIn("=x86_64", result)
+        self.assertIn("mode[dim]:str[/dim]", result)
+        self.assertIn("[dim]\\[=debug][/dim]", result)
+        self.assertIn("target[dim]:str[/dim]", result)
+        self.assertIn("[dim]\\[=x86_64][/dim]", result)
 
     def test_format_mixed_required_and_optional_arguments(self):
         """Test formatting task with mixed required and optional arguments."""
         result = _format_task_arguments(["environment", "region=us-west-1"])
-        self.assertIn("environment:str", result)
-        self.assertIn("region:str", result)
-        self.assertIn("=us-west-1", result)
+        self.assertIn("environment[dim]:str[/dim]", result)
+        self.assertIn("region[dim]:str[/dim]", result)
+        self.assertIn("[dim]\\[=us-west-1][/dim]", result)
         # Verify order is preserved
         self.assertTrue(result.index("environment") < result.index("region"))
 
     def test_format_arguments_in_definition_order(self):
         """Test formatting preserves argument definition order."""
         result = _format_task_arguments(["first", "second", "third"])
-        parts = result.split()
-        self.assertEqual(parts[0], "first:str")
-        self.assertEqual(parts[1], "second:str")
-        self.assertEqual(parts[2], "third:str")
+        # Verify order by checking indices
+        self.assertTrue(result.index("first") < result.index("second"))
+        self.assertTrue(result.index("second") < result.index("third"))
+        self.assertIn("first[dim]:str[/dim]", result)
+        self.assertIn("second[dim]:str[/dim]", result)
+        self.assertIn("third[dim]:str[/dim]", result)
 
     def test_format_default_values_with_equals_sign(self):
         """Test formatting shows default values with equals sign."""
         result = _format_task_arguments(["port=8080"])
-        self.assertIn("=8080", result)
+        self.assertIn("[dim]\\[=8080][/dim]", result)
 
     def test_format_shows_str_type_explicitly(self):
         """Test formatting shows str type explicitly."""
         result = _format_task_arguments(["name"])
-        self.assertIn("name:str", result)
+        self.assertIn("name[dim]:str[/dim]", result)
 
     def test_format_shows_int_type(self):
         """Test formatting shows int type."""
         result = _format_task_arguments(["port:int"])
-        self.assertIn("port:int", result)
+        self.assertIn("port[dim]:int[/dim]", result)
 
     def test_format_shows_float_type(self):
         """Test formatting shows float type."""
         result = _format_task_arguments(["timeout:float"])
-        self.assertIn("timeout:float", result)
+        self.assertIn("timeout[dim]:float[/dim]", result)
 
     def test_format_shows_bool_type(self):
         """Test formatting shows bool type."""
         result = _format_task_arguments(["verbose:bool"])
-        self.assertIn("verbose:bool", result)
+        self.assertIn("verbose[dim]:bool[/dim]", result)
 
     def test_format_shows_path_type(self):
         """Test formatting shows path type."""
         result = _format_task_arguments(["output:path"])
-        self.assertIn("output:path", result)
+        self.assertIn("output[dim]:path[/dim]", result)
 
     def test_format_shows_datetime_type(self):
         """Test formatting shows datetime type."""
         # Using dict format for datetime
         result = _format_task_arguments([{"timestamp": {"type": "datetime"}}])
-        self.assertIn("timestamp:datetime", result)
+        self.assertIn("timestamp[dim]:datetime[/dim]", result)
 
     def test_format_shows_ip_types(self):
         """Test formatting shows ip, ipv4, ipv6 types."""
         result_ip = _format_task_arguments([{"addr": {"type": "ip"}}])
-        self.assertIn("addr:ip", result_ip)
+        self.assertIn("addr[dim]:ip[/dim]", result_ip)
 
         result_ipv4 = _format_task_arguments([{"addr": {"type": "ipv4"}}])
-        self.assertIn("addr:ipv4", result_ipv4)
+        self.assertIn("addr[dim]:ipv4[/dim]", result_ipv4)
 
         result_ipv6 = _format_task_arguments([{"addr": {"type": "ipv6"}}])
-        self.assertIn("addr:ipv6", result_ipv6)
+        self.assertIn("addr[dim]:ipv6[/dim]", result_ipv6)
 
     def test_format_shows_email_type(self):
         """Test formatting shows email type."""
         result = _format_task_arguments([{"contact": {"type": "email"}}])
-        self.assertIn("contact:email", result)
+        self.assertIn("contact[dim]:email[/dim]", result)
 
     def test_format_shows_hostname_type(self):
         """Test formatting shows hostname type."""
         result = _format_task_arguments([{"server": {"type": "hostname"}}])
-        self.assertIn("server:hostname", result)
+        self.assertIn("server[dim]:hostname[/dim]", result)
 
     def test_format_shows_all_argument_types_explicitly(self):
         """Test formatting shows all argument types explicitly."""
         # Even default str type should be shown
         result = _format_task_arguments(["name"])
-        self.assertIn(":str", result)
+        self.assertIn("[dim]:str[/dim]", result)
 
     def test_format_handles_task_with_many_arguments(self):
         """Test formatting handles task with many arguments."""
@@ -131,19 +133,31 @@ class TestFormatTaskArguments(unittest.TestCase):
         result = _format_task_arguments(many_args)
         # All arguments should be present
         for i in range(10):
-            self.assertIn(f"arg{i}:str", result)
+            self.assertIn(f"arg{i}[dim]:str[/dim]", result)
 
     def test_format_dict_argument_with_default(self):
         """Test formatting dict-style argument with default."""
         result = _format_task_arguments([{"port": {"type": "int", "default": 8080}}])
-        self.assertIn("port:int", result)
-        self.assertIn("=8080", result)
+        self.assertIn("port[dim]:int[/dim]", result)
+        self.assertIn("[dim]\\[=8080][/dim]", result)
 
     def test_format_dict_argument_without_default(self):
         """Test formatting dict-style argument without default."""
         result = _format_task_arguments([{"port": {"type": "int"}}])
-        self.assertIn("port:int", result)
+        self.assertIn("port[dim]:int[/dim]", result)
         self.assertNotIn("=", result)
+
+    def test_format_escapes_rich_markup_in_defaults(self):
+        """Test formatting properly escapes Rich markup in default values."""
+        # Test with brackets in default value
+        result = _format_task_arguments(["pattern=[a-z]+"])
+        # The brackets in the default should be escaped
+        self.assertIn("[dim]\\[=[a-z]+][/dim]", result)
+
+        # Test with dict-style argument containing special characters
+        result2 = _format_task_arguments([{"regex": {"type": "str", "default": "[0-9]+"}}])
+        self.assertIn("regex[dim]:str[/dim]", result2)
+        self.assertIn("[dim]\\[=[0-9]+][/dim]", result2)
 
 
 class TestListFormatting(unittest.TestCase):
@@ -200,7 +214,9 @@ class TestListFormatting(unittest.TestCase):
         _list_tasks()
 
         table = self.mock_console.print.call_args[0][0]
-        self.assertEqual(table.padding, (0, 2))
+        # Rich Table padding can be a tuple of (top, right, bottom, left) or (vertical, horizontal)
+        # Check that horizontal padding is 2
+        self.assertIn(table.padding, [(0, 2), (0, 2, 0, 2)])
 
     @patch('tasktree.cli._get_recipe')
     def test_list_calculates_command_column_width_from_longest_task_name(self, mock_get_recipe):
@@ -318,7 +334,8 @@ class TestListFormatting(unittest.TestCase):
 
         table = self.mock_console.print.call_args[0][0]
         # Padding should provide visual separation
-        self.assertEqual(table.padding, (0, 2))
+        # Rich Table padding can be a tuple of (top, right, bottom, left) or (vertical, horizontal)
+        self.assertIn(table.padding, [(0, 2), (0, 2, 0, 2)])
 
 
 if __name__ == "__main__":
