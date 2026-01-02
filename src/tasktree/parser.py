@@ -1698,17 +1698,23 @@ def _parse_positional_dependency_args(
             f"Task '{task_name}' takes {len(parsed_specs)} arguments, got {len(args_list)}"
         )
 
-    # Map positional args to names
+    # Map positional args to names with type conversion
     args_dict = {}
     for i, value in enumerate(args_list):
         spec = parsed_specs[i]
-        args_dict[spec.name] = value
+        if isinstance(value, str):
+            # Convert string values using type validator
+            click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+            args_dict[spec.name] = click_type.convert(value, None, None)
+        else:
+            # Value is already typed (e.g., bool, int from YAML)
+            args_dict[spec.name] = value
 
     # Fill in defaults for remaining args
     for i in range(len(args_list), len(parsed_specs)):
         spec = parsed_specs[i]
         if spec.default is not None:
-            # Convert default using type validator
+            # Defaults in task specs are always strings, convert them
             click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
             args_dict[spec.name] = click_type.convert(spec.default, None, None)
         else:
