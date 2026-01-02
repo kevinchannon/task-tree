@@ -39,19 +39,22 @@ tasks:
     args:
       - mode=debug
       - optimize:bool=false
-    outputs: [build-{{arg.mode}}.log]
+    outputs:
+      - "build-{{arg.mode}}.log"
     cmd: echo "Building {{arg.mode}} optimize={{arg.optimize}}" > build-{{arg.mode}}.log
 
   test_debug:
     deps:
       - build: [debug, false]
-    outputs: [test-debug.log]
+    outputs:
+      - test-debug.log
     cmd: echo "Testing debug build" > test-debug.log
 
   test_release:
     deps:
       - build: [release, true]
-    outputs: [test-release.log]
+    outputs:
+      - test-release.log
     cmd: echo "Testing release build" > test-release.log
 """)
 
@@ -61,10 +64,6 @@ tasks:
 
                 # Run test_debug - should build with debug mode
                 result = self.runner.invoke(app, ["test_debug"], env=self.env)
-                if result.exit_code != 0:
-                    print(f"\n=== test_parameterized_dependency_with_different_args failed ===")
-                    print(f"Exit code: {result.exit_code}")
-                    print(f"Output:\n{result.output}")
                 self.assertEqual(result.exit_code, 0)
 
                 # Verify debug build was created
@@ -105,14 +104,16 @@ tasks:
   compile:
     args:
       - target
-    outputs: [compiled-{{arg.target}}.o]
+    outputs:
+      - "compiled-{{arg.target}}.o"
     cmd: echo "Compiling for {{arg.target}}" > compiled-{{arg.target}}.o
 
   link:
     deps:
       - compile: [x86]
       - compile: [arm]
-    outputs: [linked.bin]
+    outputs:
+      - linked.bin
     cmd: |
       echo "Linking all targets" > linked.bin
       cat compiled-x86.o compiled-arm.o >> linked.bin
@@ -124,10 +125,6 @@ tasks:
 
                 # Run link - should compile both x86 and arm
                 result = self.runner.invoke(app, ["link"], env=self.env)
-                if result.exit_code != 0:
-                    print(f"\n=== test_multiple_invocations_same_task failed ===")
-                    print(f"Exit code: {result.exit_code}")
-                    print(f"Output:\n{result.output}")
                 self.assertEqual(result.exit_code, 0)
 
                 # Verify both targets were compiled
@@ -156,7 +153,8 @@ tasks:
     args:
       - format=json
       - pretty:bool=false
-    outputs: [data.{{arg.format}}]
+    outputs:
+      - "data.{{arg.format}}"
     cmd: echo "{{arg.format}},pretty={{arg.pretty}}" > data.{{arg.format}}
 
   process:
@@ -174,10 +172,6 @@ tasks:
 
                 # Run process - should generate XML with pretty=true
                 result = self.runner.invoke(app, ["process"], env=self.env)
-                if result.exit_code != 0:
-                    print(f"\n=== test_named_argument_dependency failed ===")
-                    print(f"Exit code: {result.exit_code}")
-                    print(f"Output:\n{result.output}")
                 self.assertEqual(result.exit_code, 0)
 
                 # Verify XML was generated
