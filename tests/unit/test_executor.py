@@ -57,7 +57,7 @@ class TestTaskStatus(unittest.TestCase):
             from tasktree.hasher import hash_task, make_cache_key
 
             task = Task(name="build", cmd="cat input.txt", inputs=["input.txt"], outputs=["output.txt"])
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with current mtime
@@ -161,7 +161,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run
@@ -194,7 +194,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run
@@ -230,7 +230,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="echo test",
                 outputs=["output1.txt", "output2.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -305,7 +305,7 @@ class TestMissingOutputs(unittest.TestCase):
                 working_dir="subdir",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -338,7 +338,7 @@ class TestMissingOutputs(unittest.TestCase):
                 cmd="create-deb",
                 outputs=["dist/*.deb"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             state_manager.set(
@@ -725,7 +725,7 @@ class TestOnlyMode(unittest.TestCase):
                 cmd="echo test > output.txt",
                 outputs=["output.txt"],
             )
-            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args)
+            task_hash = hash_task(task.cmd, task.outputs, task.working_dir, task.args, "", task.deps)
             cache_key = make_cache_key(task_hash)
 
             # Set state with recent run

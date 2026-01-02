@@ -1760,11 +1760,16 @@ def _parse_named_dependency_args(
     normalized_args = {}
     for spec in parsed_specs:
         if spec.name in args_dict:
-            # Use provided value with type conversion
-            click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
-            normalized_args[spec.name] = click_type.convert(args_dict[spec.name], None, None)
+            # Use provided value with type conversion (only convert strings)
+            value = args_dict[spec.name]
+            if isinstance(value, str):
+                click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
+                normalized_args[spec.name] = click_type.convert(value, None, None)
+            else:
+                # Value is already typed (e.g., bool, int from YAML)
+                normalized_args[spec.name] = value
         elif spec.default is not None:
-            # Use default value
+            # Use default value (defaults are always strings in task specs)
             click_type = get_click_type(spec.arg_type, min_val=spec.min_val, max_val=spec.max_val)
             normalized_args[spec.name] = click_type.convert(spec.default, None, None)
         else:
