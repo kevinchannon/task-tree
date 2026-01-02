@@ -52,7 +52,7 @@ tasks:
                 self.assertIn("env=production", log_content)
                 self.assertIn("region=us-west-1", log_content)  # Default value
                 self.assertIn("port=8080", log_content)  # Default value
-                self.assertIn("debug=False", log_content)  # Default value
+                self.assertIn("debug=false", log_content)  # Default value (lowercase)
 
                 # Clean up for next test
                 (project_root / "deploy.log").unlink()
