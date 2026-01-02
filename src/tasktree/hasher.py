@@ -3,12 +3,28 @@ import json
 from typing import Any, Optional
 
 
+def _arg_sort_key(arg: str | dict[str, Any]) -> str:
+    """Extract the sort key from an arg for deterministic hashing.
+
+    Args:
+        arg: Either a string arg or dict arg specification
+
+    Returns:
+        The argument name to use as a sort key
+    """
+    if isinstance(arg, dict):
+        # Dict args have exactly one key - the argument name
+        # This is validated by parse_arg_spec in parser.py
+        return next(iter(arg.keys()))
+    return arg
+
+
 def hash_task(cmd: str, outputs: list[str], working_dir: str, args: list[str | dict[str, Any]], env: str = "") -> str:
     data = {
         "cmd": cmd,
         "outputs": sorted(outputs),
         "working_dir": working_dir,
-        "args": args,
+        "args": sorted(args, key=_arg_sort_key),
         "env": env,
     }
 
