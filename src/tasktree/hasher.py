@@ -104,9 +104,16 @@ def hash_environment_definition(env) -> str:
     # Import inside function to avoid circular dependency
     from tasktree.parser import Environment
 
+    # Handle args - can be list (shell args) or dict (docker build args)
+    args_value = env.args
+    if isinstance(env.args, dict):
+        args_value = dict(sorted(env.args.items()))  # Sort dict for determinism
+    elif isinstance(env.args, list):
+        args_value = sorted(env.args)  # Sort list for determinism
+
     data = {
         "shell": env.shell,
-        "args": sorted(env.args),  # Sort for determinism
+        "args": args_value,
         "preamble": env.preamble,
         "dockerfile": env.dockerfile,
         "context": env.context,

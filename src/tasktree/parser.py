@@ -31,7 +31,7 @@ class Environment:
 
     name: str
     shell: str = ""  # Path to shell (required for shell envs, optional for Docker)
-    args: list[str] = field(default_factory=list)
+    args: list[str] | dict[str, str] = field(default_factory=list)  # Shell args (list) or Docker build args (dict)
     preamble: str = ""
     # Docker-specific fields (presence of dockerfile indicates Docker environment)
     dockerfile: str = ""  # Path to Dockerfile
@@ -44,7 +44,7 @@ class Environment:
     run_as_root: bool = False  # If True, skip user mapping (run as root in container)
 
     def __post_init__(self):
-        """Ensure args is always a list."""
+        """Ensure args is in the correct format."""
         if isinstance(self.args, str):
             self.args = [self.args]
 
