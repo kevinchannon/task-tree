@@ -1259,13 +1259,12 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
 
     Supports both string format and dictionary format:
 
-    String format:
-        - Simple name: "argname"
+    String format (simple, most common):
+        - Simple name: "argname" (defaults to string type)
         - Exported (becomes env var): "$argname"
         - With default: "argname=value" or "$argname=value"
-        - Legacy type syntax: "argname:type=value" (for backwards compat)
 
-    Dictionary format:
+    Dictionary format (when type info needed):
         - argname: { default: "value" }
         - argname: { type: int, default: 42 }
         - argname: { type: int, min: 1, max: 100 }
@@ -1328,33 +1327,28 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
     if is_exported:
         arg_spec = arg_spec[1:]  # Remove $ prefix
 
-    # Split on = to separate name:type from default
+    # Split on = to separate name from default
     if "=" in arg_spec:
-        name_type, default = arg_spec.split("=", 1)
+        name, default = arg_spec.split("=", 1)
     else:
-        name_type = arg_spec
+        name = arg_spec
         default = None
 
-    # Split on : to separate name from type
-    if ":" in name_type:
-        name, arg_type = name_type.split(":", 1)
+    # Check for colon (old type syntax no longer supported)
+    if ":" in name:
+        raise ValueError(
+            f"Type annotation syntax 'argname:type' is no longer supported.\n"
+            f"Found: '{arg_spec}'\n\n"
+            f"To specify a type, use dictionary format:\n"
+            f"  args:\n"
+            f"    - {{{name.split(':', 1)[0]}: {{type: {name.split(':', 1)[1]}}}}}"
+        )
 
-        # Exported arguments cannot have type annotations
-        if is_exported:
-            raise ValueError(
-                f"Type annotations not allowed on exported arguments\n"
-                f"In argument: ${name}:{arg_type}\n\n"
-                f"Exported arguments are always strings. Remove the type annotation:\n"
-                f"  args: [${name}]"
-            )
-    else:
-        name = name_type
-        arg_type = "str"
-
-    # String format doesn't support min/max/choices
+    # String format is always type 'str' (defaults to string)
+    # String format doesn't support type annotations, min/max, or choices
     return ArgSpec(
         name=name,
-        arg_type=arg_type,
+        arg_type="str",
         default=default,
         is_exported=is_exported,
         min_val=None,

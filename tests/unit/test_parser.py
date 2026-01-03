@@ -35,21 +35,19 @@ class TestParseArgSpec(unittest.TestCase):
         self.assertEqual(spec.default,"eu-west-1")
         self.assertFalse(spec.is_exported)
 
-    def test_parse_arg_with_type(self):
-        """Test parsing argument with type."""
-        spec = parse_arg_spec("port:int")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertIsNone(spec.default)
-        self.assertFalse(spec.is_exported)
+    def test_parse_arg_with_type_raises_error(self):
+        """Test that colon type syntax raises helpful error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int")
+        self.assertIn("Type annotation syntax 'argname:type' is no longer supported", str(context.exception))
+        self.assertIn("dictionary format", str(context.exception))
 
-    def test_parse_arg_with_type_and_default(self):
-        """Test parsing argument with type and default."""
-        spec = parse_arg_spec("port:int=8080")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertEqual(spec.default,"8080")
-        self.assertFalse(spec.is_exported)
+    def test_parse_arg_with_type_and_default_raises_error(self):
+        """Test that colon type syntax with default raises helpful error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int=8080")
+        self.assertIn("Type annotation syntax 'argname:type' is no longer supported", str(context.exception))
+        self.assertIn("dictionary format", str(context.exception))
 
     def test_parse_exported_arg(self):
         """Test parsing exported argument ($ prefix)."""
@@ -71,14 +69,13 @@ class TestParseArgSpec(unittest.TestCase):
         """Test that exported arguments with type annotations raise error."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$server:str")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
-        self.assertIn("$server:str", str(context.exception))
+        self.assertIn("Type annotation syntax 'argname:type' is no longer supported", str(context.exception))
 
     def test_parse_exported_arg_with_type_and_default_raises_error(self):
         """Test that exported arguments with type and default raise error."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$port:int=8080")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
+        self.assertIn("Type annotation syntax 'argname:type' is no longer supported", str(context.exception))
 
     def test_yaml_parses_dollar_prefix_as_literal(self):
         """Test that PyYAML correctly parses $ prefix as literal text."""
@@ -86,12 +83,12 @@ class TestParseArgSpec(unittest.TestCase):
 args:
   - $server
   - $user=admin
-  - port:int=8080
+  - region=us-east-1
 """
         data = yaml.safe_load(yaml_text)
         self.assertEqual(data["args"][0], "$server")
         self.assertEqual(data["args"][1], "$user=admin")
-        self.assertEqual(data["args"][2], "port:int=8080")
+        self.assertEqual(data["args"][2], "region=us-east-1")
 
 
 class TestParseArgSpecYAML(unittest.TestCase):
@@ -2664,9 +2661,11 @@ class TestArgMinMax(unittest.TestCase):
 
     def test_string_format_args_have_no_min_max(self):
         """Test that string format args return None for min/max."""
-        spec = parse_arg_spec("count:int=5")
+        spec = parse_arg_spec("count=5")
         self.assertIsNone(spec.min_val)
         self.assertIsNone(spec.max_val)
+        # String format is always type 'str'
+        self.assertEqual(spec.arg_type, "str")
 
     def test_inferred_type_with_min_max(self):
         """Test that min/max works with inferred int type from default."""

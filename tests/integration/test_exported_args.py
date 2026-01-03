@@ -242,12 +242,12 @@ tasks:
         """Test that exported arguments with type annotations fail during arg parsing."""
         from tasktree.parser import parse_arg_spec
 
-        # Test that parse_arg_spec raises error for exported args with types
+        # Test that parse_arg_spec raises error for colon type syntax
         with self.assertRaises(ValueError) as cm:
             parse_arg_spec("$server:str")
 
-        self.assertIn("Type annotations not allowed", str(cm.exception))
-        self.assertIn("$server:str", str(cm.exception))
+        self.assertIn("Type annotation syntax 'argname:type' is no longer supported", str(cm.exception))
+        self.assertIn("dictionary format", str(cm.exception))
 
     def test_multiline_command_with_exported_args(self):
         """Test exported args work with multi-line commands."""

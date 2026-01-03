@@ -157,16 +157,53 @@
               "description": "Directory to execute the command in (relative to recipe file)"
             },
             "args": {
-              "description": "Parameterized arguments for the task (format: name, name:type, name:type=default)",
+              "description": "Parameterized arguments for the task. Simple strings (argname, argname=default) or dictionaries with type info ({ argname: { type: int, default: 42 } })",
               "oneOf": [
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "Simple argument: 'argname' or 'argname=default' (always string type)"
+                      },
+                      {
+                        "type": "object",
+                        "description": "Dictionary format with type info",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": {
+                          "type": "object",
+                          "properties": {
+                            "type": {
+                              "type": "string",
+                              "enum": ["str", "int", "float", "bool", "path", "datetime", "ip", "ipv4", "ipv6", "email", "hostname"]
+                            },
+                            "default": {
+                              "description": "Default value for the argument"
+                            },
+                            "min": {
+                              "type": "number",
+                              "description": "Minimum value (int/float types only)"
+                            },
+                            "max": {
+                              "type": "number",
+                              "description": "Maximum value (int/float types only)"
+                            },
+                            "choices": {
+                              "type": "array",
+                              "description": "List of valid choices"
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      }
+                    ]
                   }
                 },
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Single argument as a string"
                 }
               ]
             },
