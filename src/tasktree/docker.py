@@ -87,16 +87,24 @@ class DockerManager:
 
         # Build the image
         try:
+            docker_build_cmd = [
+                "docker",
+                "build",
+                "-t",
+                image_tag,
+                "-f",
+                str(dockerfile_path),
+            ]
+
+            # Add build args if environment has them (docker environments use dict for args)
+            if isinstance(env.args, dict):
+                for arg_name, arg_value in env.args.items():
+                    docker_build_cmd.extend(["--build-arg", f"{arg_name}={arg_value}"])
+
+            docker_build_cmd.append(str(context_path))
+
             subprocess.run(
-                [
-                    "docker",
-                    "build",
-                    "-t",
-                    image_tag,
-                    "-f",
-                    str(dockerfile_path),
-                    str(context_path),
-                ],
+                docker_build_cmd,
                 check=True,
                 capture_output=False,  # Show build output to user
             )

@@ -246,6 +246,54 @@ class TestDockerManager(unittest.TestCase):
         self.assertEqual(build_call_args[3], "tt-env-builder")
         self.assertEqual(build_call_args[4], "-f")
 
+    @patch("tasktree.docker.subprocess.run")
+    def test_build_command_with_build_args(self, mock_run):
+        """Test that docker build command includes --build-arg flags."""
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            args={"FOO": "fooable", "bar": "you're barred!"},
+        )
+
+        # Mock docker inspect returning image ID
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return None
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.ensure_image_built(env)
+
+        # Check that docker build was called with build args (2nd call, after docker --version)
+        build_call_args = mock_run.call_args_list[1][0][0]
+
+        # Verify basic command structure
+        self.assertEqual(build_call_args[0], "docker")
+        self.assertEqual(build_call_args[1], "build")
+        self.assertEqual(build_call_args[2], "-t")
+        self.assertEqual(build_call_args[3], "tt-env-builder")
+        self.assertEqual(build_call_args[4], "-f")
+
+        # Verify build args are included
+        self.assertIn("--build-arg", build_call_args)
+
+        # Find all build arg pairs
+        build_args = {}
+        for i, arg in enumerate(build_call_args):
+            if arg == "--build-arg":
+                arg_pair = build_call_args[i + 1]
+                key, value = arg_pair.split("=", 1)
+                build_args[key] = value
+
+        # Verify expected build args
+        self.assertEqual(build_args["FOO"], "fooable")
+        self.assertEqual(build_args["bar"], "you're barred!")
+
     def test_resolve_volume_mount_relative(self):
         """Test relative volume path resolution."""
         volume = "./src:/workspace/src"
