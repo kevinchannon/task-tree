@@ -1263,7 +1263,6 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
         - Simple name: "argname"
         - Exported (becomes env var): "$argname"
         - With default: "argname=value" or "$argname=value"
-        - Legacy type syntax: "argname:type=value" (for backwards compat)
 
     Dictionary format:
         - argname: { default: "value" }
@@ -1328,33 +1327,41 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
     if is_exported:
         arg_spec = arg_spec[1:]  # Remove $ prefix
 
-    # Split on = to separate name:type from default
+    # Split on = to separate name from default
     if "=" in arg_spec:
-        name_type, default = arg_spec.split("=", 1)
+        name, default = arg_spec.split("=", 1)
     else:
-        name_type = arg_spec
+        name = arg_spec
         default = None
 
-    # Split on : to separate name from type
-    if ":" in name_type:
-        name, arg_type = name_type.split(":", 1)
+    # Check for old syntax with : (type annotation) - no longer supported
+    if ":" in name:
+        # Provide helpful error message pointing to new syntax
+        old_arg = f"${name}" if is_exported else name
+        if "=" in arg_spec:
+            # name already has the part before =, so reconstruct full spec for error
+            old_spec = f"{old_arg}={default}"
+        else:
+            old_spec = old_arg
 
-        # Exported arguments cannot have type annotations
-        if is_exported:
-            raise ValueError(
-                f"Type annotations not allowed on exported arguments\n"
-                f"In argument: ${name}:{arg_type}\n\n"
-                f"Exported arguments are always strings. Remove the type annotation:\n"
-                f"  args: [${name}]"
-            )
-    else:
-        name = name_type
-        arg_type = "str"
+        # Extract what looks like the type annotation
+        arg_name, type_part = name.split(":", 1)
 
-    # String format doesn't support min/max/choices
+        raise ValueError(
+            f"Old argument syntax is no longer supported: '{old_spec}'\n\n"
+            f"The old syntax using colons for type annotations (e.g., 'arg:int=value') has been removed.\n\n"
+            f"Please use the new YAML dictionary syntax instead:\n"
+            f"  args:\n"
+            f"    - {arg_name}:\n"
+            f"        type: {type_part}\n" +
+            (f"        default: {default}\n" if default else "") +
+            f"\nFor more details, see the task definition documentation."
+        )
+
+    # String format only supports simple names with optional defaults (all strings)
     return ArgSpec(
         name=name,
-        arg_type=arg_type,
+        arg_type="str",
         default=default,
         is_exported=is_exported,
         min_val=None,

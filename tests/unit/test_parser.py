@@ -35,21 +35,21 @@ class TestParseArgSpec(unittest.TestCase):
         self.assertEqual(spec.default,"eu-west-1")
         self.assertFalse(spec.is_exported)
 
-    def test_parse_arg_with_type(self):
-        """Test parsing argument with type."""
-        spec = parse_arg_spec("port:int")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertIsNone(spec.default)
-        self.assertFalse(spec.is_exported)
+    def test_old_type_syntax_raises_error(self):
+        """Test that old type syntax with colon raises helpful error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int")
+        self.assertIn("Old argument syntax is no longer supported", str(context.exception))
+        self.assertIn("port:int", str(context.exception))
+        self.assertIn("new YAML dictionary syntax", str(context.exception))
 
-    def test_parse_arg_with_type_and_default(self):
-        """Test parsing argument with type and default."""
-        spec = parse_arg_spec("port:int=8080")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertEqual(spec.default,"8080")
-        self.assertFalse(spec.is_exported)
+    def test_old_type_syntax_with_default_raises_error(self):
+        """Test that old type syntax with colon and default raises helpful error."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int=8080")
+        self.assertIn("Old argument syntax is no longer supported", str(context.exception))
+        self.assertIn("port:int=8080", str(context.exception))
+        self.assertIn("new YAML dictionary syntax", str(context.exception))
 
     def test_parse_exported_arg(self):
         """Test parsing exported argument ($ prefix)."""
@@ -67,18 +67,18 @@ class TestParseArgSpec(unittest.TestCase):
         self.assertEqual(spec.default,"admin")
         self.assertTrue(spec.is_exported)
 
-    def test_parse_exported_arg_with_type_raises_error(self):
-        """Test that exported arguments with type annotations raise error."""
+    def test_old_exported_arg_with_type_raises_error(self):
+        """Test that old syntax with exported arguments and type annotations raise error."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$server:str")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
+        self.assertIn("Old argument syntax is no longer supported", str(context.exception))
         self.assertIn("$server:str", str(context.exception))
 
-    def test_parse_exported_arg_with_type_and_default_raises_error(self):
-        """Test that exported arguments with type and default raise error."""
+    def test_old_exported_arg_with_type_and_default_raises_error(self):
+        """Test that old syntax with exported arguments, type and default raise error."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$port:int=8080")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
+        self.assertIn("Old argument syntax is no longer supported", str(context.exception))
 
     def test_yaml_parses_dollar_prefix_as_literal(self):
         """Test that PyYAML correctly parses $ prefix as literal text."""
@@ -86,12 +86,12 @@ class TestParseArgSpec(unittest.TestCase):
 args:
   - $server
   - $user=admin
-  - port:int=8080
+  - mode
 """
         data = yaml.safe_load(yaml_text)
         self.assertEqual(data["args"][0], "$server")
         self.assertEqual(data["args"][1], "$user=admin")
-        self.assertEqual(data["args"][2], "port:int=8080")
+        self.assertEqual(data["args"][2], "mode")
 
 
 class TestParseArgSpecYAML(unittest.TestCase):
@@ -2664,7 +2664,7 @@ class TestArgMinMax(unittest.TestCase):
 
     def test_string_format_args_have_no_min_max(self):
         """Test that string format args return None for min/max."""
-        spec = parse_arg_spec("count:int=5")
+        spec = parse_arg_spec("count")
         self.assertIsNone(spec.min_val)
         self.assertIsNone(spec.max_val)
 

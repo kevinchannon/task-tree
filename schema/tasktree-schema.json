@@ -157,7 +157,7 @@
               "description": "Directory to execute the command in (relative to recipe file)"
             },
             "args": {
-              "description": "Parameterized arguments for the task (format: name, name:type, name:type=default)",
+              "description": "Parameterized arguments for the task (format: name, name=default, or {name: {type: int, default: 42}})",
               "oneOf": [
                 {
                   "type": "array",

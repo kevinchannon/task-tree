@@ -76,17 +76,17 @@ class TestFormatTaskArguments(unittest.TestCase):
 
     def test_format_shows_int_type(self):
         """Test formatting shows int type."""
-        result = _format_task_arguments(["port:int"])
+        result = _format_task_arguments([{"port": {"type": "int"}}])
         self.assertIn("port[dim]:int[/dim]", result)
 
     def test_format_shows_float_type(self):
         """Test formatting shows float type."""
-        result = _format_task_arguments(["timeout:float"])
+        result = _format_task_arguments([{"timeout": {"type": "float"}}])
         self.assertIn("timeout[dim]:float[/dim]", result)
 
     def test_format_shows_bool_type(self):
         """Test formatting shows bool type."""
-        result = _format_task_arguments(["verbose:bool"])
+        result = _format_task_arguments([{"verbose": {"type": "bool"}}])
         self.assertIn("verbose[dim]:bool[/dim]", result)
 
     def test_format_shows_path_type(self):
