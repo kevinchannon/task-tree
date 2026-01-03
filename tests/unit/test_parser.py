@@ -19,87 +19,69 @@ from tasktree.parser import (
 
 
 class TestParseArgSpec(unittest.TestCase):
-    def test_parse_simple_arg(self):
-        """Test parsing a simple argument name."""
-        spec = parse_arg_spec("environment")
-        self.assertEqual(spec.name,"environment")
-        self.assertEqual(spec.arg_type,"str")
-        self.assertIsNone(spec.default)
-        self.assertFalse(spec.is_exported)
+    """Tests that old string-based argument syntax is rejected."""
 
-    def test_parse_arg_with_default(self):
-        """Test parsing argument with default value."""
-        spec = parse_arg_spec("region=eu-west-1")
-        self.assertEqual(spec.name,"region")
-        self.assertEqual(spec.arg_type,"str")
-        self.assertEqual(spec.default,"eu-west-1")
-        self.assertFalse(spec.is_exported)
+    def test_reject_simple_string_arg(self):
+        """Test that simple string argument syntax is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("environment")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("environment: {}", str(context.exception))
 
-    def test_parse_arg_with_type(self):
-        """Test parsing argument with type."""
-        spec = parse_arg_spec("port:int")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertIsNone(spec.default)
-        self.assertFalse(spec.is_exported)
+    def test_reject_arg_with_default(self):
+        """Test that string argument with default is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("region=eu-west-1")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("region: {default: eu-west-1}", str(context.exception))
 
-    def test_parse_arg_with_type_and_default(self):
-        """Test parsing argument with type and default."""
-        spec = parse_arg_spec("port:int=8080")
-        self.assertEqual(spec.name,"port")
-        self.assertEqual(spec.arg_type,"int")
-        self.assertEqual(spec.default,"8080")
-        self.assertFalse(spec.is_exported)
+    def test_reject_arg_with_type(self):
+        """Test that string argument with type is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("port: {type: int}", str(context.exception))
 
-    def test_parse_exported_arg(self):
-        """Test parsing exported argument ($ prefix)."""
-        spec = parse_arg_spec("$server")
-        self.assertEqual(spec.name,"server")
-        self.assertEqual(spec.arg_type,"str")
-        self.assertIsNone(spec.default)
-        self.assertTrue(spec.is_exported)
+    def test_reject_arg_with_type_and_default(self):
+        """Test that string argument with type and default is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("port:int=8080")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("port: {type: int, default: 8080}", str(context.exception))
 
-    def test_parse_exported_arg_with_default(self):
-        """Test parsing exported argument with default value."""
-        spec = parse_arg_spec("$user=admin")
-        self.assertEqual(spec.name,"user")
-        self.assertEqual(spec.arg_type,"str")
-        self.assertEqual(spec.default,"admin")
-        self.assertTrue(spec.is_exported)
+    def test_reject_exported_arg(self):
+        """Test that string exported argument is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("$server")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("$server: {}", str(context.exception))
 
-    def test_parse_exported_arg_with_type_raises_error(self):
-        """Test that exported arguments with type annotations raise error."""
+    def test_reject_exported_arg_with_default(self):
+        """Test that string exported argument with default is rejected."""
+        with self.assertRaises(ValueError) as context:
+            parse_arg_spec("$user=admin")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
+        self.assertIn("$user: {default: admin}", str(context.exception))
+
+    def test_reject_exported_arg_with_type(self):
+        """Test that string exported argument with type is rejected."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$server:str")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
-        self.assertIn("$server:str", str(context.exception))
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
 
-    def test_parse_exported_arg_with_type_and_default_raises_error(self):
-        """Test that exported arguments with type and default raise error."""
+    def test_reject_exported_arg_with_type_and_default(self):
+        """Test that string exported argument with type and default is rejected."""
         with self.assertRaises(ValueError) as context:
             parse_arg_spec("$port:int=8080")
-        self.assertIn("Type annotations not allowed on exported arguments", str(context.exception))
-
-    def test_yaml_parses_dollar_prefix_as_literal(self):
-        """Test that PyYAML correctly parses $ prefix as literal text."""
-        yaml_text = """
-args:
-  - $server
-  - $user=admin
-  - port:int=8080
-"""
-        data = yaml.safe_load(yaml_text)
-        self.assertEqual(data["args"][0], "$server")
-        self.assertEqual(data["args"][1], "$user=admin")
-        self.assertEqual(data["args"][2], "port:int=8080")
+        self.assertIn("String argument syntax is no longer supported", str(context.exception))
 
 
 class TestParseArgSpecYAML(unittest.TestCase):
     """Tests for YAML-based argument syntax."""
 
-    def test_parse_simple_string_arg(self):
-        """Test parsing simple argument as string."""
-        spec = parse_arg_spec("key1")
+    def test_parse_simple_dict_arg(self):
+        """Test parsing simple argument with empty dict."""
+        spec = parse_arg_spec({"key1": {}})
         self.assertEqual(spec.name,"key1")
         self.assertEqual(spec.arg_type,"str")
         self.assertIsNone(spec.default)
@@ -225,15 +207,15 @@ class TestParseArgSpecYAML(unittest.TestCase):
         self.assertIsNone(spec.default)
         self.assertFalse(spec.is_exported)
 
-    def test_mixed_string_and_dict_formats(self):
-        """Test mixing string and dict argument formats in same list."""
+    def test_multiple_dict_formats(self):
+        """Test parsing multiple arguments with dict format."""
         # Parse different formats
-        simple = parse_arg_spec("env")
+        simple = parse_arg_spec({"env": {}})
         with_default = parse_arg_spec({"region": {"default": "us-east-1"}})
         with_type = parse_arg_spec({"port": {"type": "int", "default": 8080}})
-        exported = parse_arg_spec("$server")
+        exported = parse_arg_spec({"$server": {}})
 
-        # Verify simple string format
+        # Verify simple dict format
         self.assertEqual(simple.name, "env")
         self.assertEqual(simple.arg_type, "str")
         self.assertIsNone(simple.default)
@@ -251,7 +233,7 @@ class TestParseArgSpecYAML(unittest.TestCase):
         self.assertEqual(with_type.default, "8080")
         self.assertFalse(with_type.is_exported)
 
-        # Verify exported string format
+        # Verify exported dict format
         self.assertEqual(exported.name, "server")
         self.assertEqual(exported.arg_type, "str")
         self.assertIsNone(exported.default)

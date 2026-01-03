@@ -157,16 +157,16 @@
               "description": "Directory to execute the command in (relative to recipe file)"
             },
             "args": {
-              "description": "Parameterized arguments for the task (format: name, name:type, name:type=default)",
+              "description": "Parameterized arguments for the task. Use pure YAML dictionary format: { name: { type: int, default: 42 } }",
               "oneOf": [
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "type": "object"
                   }
                 },
                 {
-                  "type": "string"
+                  "type": "object"
                 }
               ]
             },

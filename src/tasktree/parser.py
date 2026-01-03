@@ -1257,29 +1257,24 @@ def _check_case_sensitive_arg_collisions(args: list[str], task_name: str) -> Non
 def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
     """Parse argument specification from YAML.
 
-    Supports both string format and dictionary format:
-
-    String format:
-        - Simple name: "argname"
-        - Exported (becomes env var): "$argname"
-        - With default: "argname=value" or "$argname=value"
-        - Legacy type syntax: "argname:type=value" (for backwards compat)
-
-    Dictionary format:
+    Only supports pure YAML dictionary format:
         - argname: { default: "value" }
         - argname: { type: int, default: 42 }
         - argname: { type: int, min: 1, max: 100 }
         - argname: { type: str, choices: ["dev", "staging", "prod"] }
         - $argname: { default: "value" }  # Exported
 
+    For simple string arguments with no configuration, use an empty dict:
+        - argname: {}
+
     Args:
-        arg_spec: Argument specification (string or dict with single key)
+        arg_spec: Argument specification (dict with single key)
 
     Returns:
         ArgSpec object containing parsed argument information
 
     Examples:
-        >>> parse_arg_spec("environment")
+        >>> parse_arg_spec({"environment": {}})
         ArgSpec(name='environment', arg_type='str', default=None, is_exported=False, min_val=None, max_val=None, choices=None)
         >>> parse_arg_spec({"key2": {"default": "foo"}})
         ArgSpec(name='key2', arg_type='str', default='foo', is_exported=False, min_val=None, max_val=None, choices=None)
@@ -1293,74 +1288,86 @@ def parse_arg_spec(arg_spec: str | dict) -> ArgSpec:
     Raises:
         ValueError: If argument specification is invalid
     """
-    # Handle dictionary format: { argname: { type: ..., default: ... } }
-    if isinstance(arg_spec, dict):
-        if len(arg_spec) != 1:
-            raise ValueError(
-                f"Argument dictionary must have exactly one key (the argument name), got: {list(arg_spec.keys())}"
+    # Only dictionary format is supported
+    if not isinstance(arg_spec, dict):
+        # Detect old syntax patterns and provide helpful error messages
+        if isinstance(arg_spec, str):
+            error_msg = (
+                f"String argument syntax is no longer supported.\n"
+                f"Found: {arg_spec!r}\n\n"
             )
 
-        # Extract the argument name and its configuration
-        arg_name, config = next(iter(arg_spec.items()))
+            # Check for old syntax patterns
+            if ":" in arg_spec or "=" in arg_spec:
+                # Extract the base name for the example
+                base_name = arg_spec.lstrip("$").split(":")[0].split("=")[0]
+                is_exported = arg_spec.startswith("$")
 
-        # Check if argument is exported (name starts with $)
-        is_exported = arg_name.startswith("$")
-        if is_exported:
-            arg_name = arg_name[1:]  # Remove $ prefix
+                error_msg += (
+                    f"Use pure YAML dictionary syntax instead:\n"
+                    f"  args:\n"
+                )
 
-        # Validate argument name
-        if not arg_name or not isinstance(arg_name, str):
+                if "=" in arg_spec:
+                    # Has a default value
+                    default_val = arg_spec.split("=", 1)[1]
+                    if ":" in arg_spec.split("=")[0]:
+                        # Has type annotation: "name:type=default"
+                        type_part = arg_spec.split(":", 1)[1].split("=")[0]
+                        error_msg += f"    - {'$' if is_exported else ''}{base_name}: {{type: {type_part}, default: {default_val}}}\n"
+                    else:
+                        # Just default: "name=default"
+                        error_msg += f"    - {'$' if is_exported else ''}{base_name}: {{default: {default_val}}}\n"
+                elif ":" in arg_spec:
+                    # Has type annotation only: "name:type"
+                    type_part = arg_spec.split(":", 1)[1]
+                    error_msg += f"    - {'$' if is_exported else ''}{base_name}: {{type: {type_part}}}\n"
+                else:
+                    # Simple name
+                    error_msg += f"    - {'$' if is_exported else ''}{base_name}: {{}}\n"
+            else:
+                # Simple string name
+                is_exported = arg_spec.startswith("$")
+                base_name = arg_spec.lstrip("$")
+                error_msg += (
+                    f"Use pure YAML dictionary syntax instead:\n"
+                    f"  args:\n"
+                    f"    - {'$' if is_exported else ''}{base_name}: {{}}\n"
+                )
+
+            raise ValueError(error_msg)
+        else:
             raise ValueError(
-                f"Argument name must be a non-empty string, got: {arg_name!r}"
+                f"Argument specification must be a dictionary, got: {type(arg_spec).__name__}"
             )
 
-        # Config must be a dictionary
-        if not isinstance(config, dict):
-            raise ValueError(
-                f"Argument '{arg_name}' configuration must be a dictionary, got: {type(config).__name__}"
-            )
+    # Validate dictionary has exactly one key
+    if len(arg_spec) != 1:
+        raise ValueError(
+            f"Argument dictionary must have exactly one key (the argument name), got: {list(arg_spec.keys())}"
+        )
 
-        return _parse_arg_dict(arg_name, config, is_exported)
+    # Extract the argument name and its configuration
+    arg_name, config = next(iter(arg_spec.items()))
 
-    # Handle string format
-    # Check if argument is exported (starts with $)
-    is_exported = arg_spec.startswith("$")
+    # Check if argument is exported (name starts with $)
+    is_exported = arg_name.startswith("$")
     if is_exported:
-        arg_spec = arg_spec[1:]  # Remove $ prefix
+        arg_name = arg_name[1:]  # Remove $ prefix
 
-    # Split on = to separate name:type from default
-    if "=" in arg_spec:
-        name_type, default = arg_spec.split("=", 1)
-    else:
-        name_type = arg_spec
-        default = None
+    # Validate argument name
+    if not arg_name or not isinstance(arg_name, str):
+        raise ValueError(
+            f"Argument name must be a non-empty string, got: {arg_name!r}"
+        )
 
-    # Split on : to separate name from type
-    if ":" in name_type:
-        name, arg_type = name_type.split(":", 1)
+    # Config must be a dictionary
+    if not isinstance(config, dict):
+        raise ValueError(
+            f"Argument '{arg_name}' configuration must be a dictionary, got: {type(config).__name__}"
+        )
 
-        # Exported arguments cannot have type annotations
-        if is_exported:
-            raise ValueError(
-                f"Type annotations not allowed on exported arguments\n"
-                f"In argument: ${name}:{arg_type}\n\n"
-                f"Exported arguments are always strings. Remove the type annotation:\n"
-                f"  args: [${name}]"
-            )
-    else:
-        name = name_type
-        arg_type = "str"
-
-    # String format doesn't support min/max/choices
-    return ArgSpec(
-        name=name,
-        arg_type=arg_type,
-        default=default,
-        is_exported=is_exported,
-        min_val=None,
-        max_val=None,
-        choices=None
-    )
+    return _parse_arg_dict(arg_name, config, is_exported)
 
 
 def _parse_arg_dict(arg_name: str, config: dict, is_exported: bool) -> ArgSpec:
