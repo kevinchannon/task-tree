@@ -742,7 +742,7 @@ imports:
             self.assertEqual(task.inputs, ["src/**/*.rs"])
             self.assertEqual(task.outputs, ["target/release/bin"])
             self.assertEqual(task.working_dir, "subproject")
-            self.assertEqual(task.args, ["environment", "region=eu-west-1"])
+            self.assertEqual(task.args, ["environment", {"region": {"default": "eu-west-1"}}])
             self.assertEqual(task.cmd, "cargo build --release")
 
     def test_cross_import_dependencies(self):
@@ -2659,7 +2659,7 @@ class TestArgMinMax(unittest.TestCase):
 
     def test_string_format_args_have_no_min_max(self):
         """Test that string format args return None for min/max."""
-        spec = parse_arg_spec("count:int=5")
+        spec = parse_arg_spec("count")
         self.assertIsNone(spec.min_val)
         self.assertIsNone(spec.max_val)
 
