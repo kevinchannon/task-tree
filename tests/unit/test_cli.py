@@ -114,61 +114,64 @@ class TestParseTaskArgs(unittest.TestCase):
 class TestUnicodeSupport(unittest.TestCase):
     """Tests for Unicode symbol detection functions."""
 
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'posix')
     @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_with_utf8_encoding(self, mock_platform, mock_stdout):
+    def test_supports_unicode_with_utf8_encoding(self, mock_stdout):
         """Test that UTF-8 encoding returns True."""
         mock_stdout.encoding = 'utf-8'
         self.assertTrue(_supports_unicode())
 
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'posix')
     @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_with_utf8_uppercase(self, mock_platform, mock_stdout):
+    def test_supports_unicode_with_utf8_uppercase(self, mock_stdout):
         """Test that UTF-8 (uppercase) encoding returns True."""
         mock_stdout.encoding = 'UTF-8'
         self.assertTrue(_supports_unicode())
 
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'nt')
     @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_on_windows_without_utf8(self, mock_platform, mock_stdout):
-        """Test that Windows without UTF-8 encoding returns False."""
-        mock_stdout.encoding = 'cp1252'
-        mock_platform.return_value = 'Windows'
+    def test_supports_unicode_on_classic_windows_console(self, mock_stdout):
+        """Test that classic Windows console (conhost) returns False."""
+        mock_stdout.encoding = 'utf-8'
+        # No WT_SESSION in environ means classic console
         self.assertFalse(_supports_unicode())
 
+    @patch('tasktree.cli.os.environ', {'WT_SESSION': 'some-value'})
+    @patch('tasktree.cli.os.name', 'nt')
     @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_on_non_windows_without_utf8(self, mock_platform, mock_stdout):
-        """Test that non-Windows without UTF-8 encoding returns False for safety."""
+    def test_supports_unicode_on_windows_terminal(self, mock_stdout):
+        """Test that Windows Terminal with UTF-8 returns True."""
+        mock_stdout.encoding = 'utf-8'
+        # WT_SESSION present means Windows Terminal
+        self.assertTrue(_supports_unicode())
+
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'posix')
+    @patch('tasktree.cli.sys.stdout')
+    def test_supports_unicode_with_encoding_that_fails_encode(self, mock_stdout):
+        """Test that encoding that can't encode symbols returns False."""
+        # ASCII encoding will fail to encode ✓✗
+        mock_stdout.encoding = 'ascii'
+        self.assertFalse(_supports_unicode())
+
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'posix')
+    @patch('tasktree.cli.sys.stdout')
+    def test_supports_unicode_with_none_encoding(self, mock_stdout):
+        """Test that None encoding returns False."""
+        mock_stdout.encoding = None
+        self.assertFalse(_supports_unicode())
+
+    @patch('tasktree.cli.os.environ', {})
+    @patch('tasktree.cli.os.name', 'posix')
+    @patch('tasktree.cli.sys.stdout')
+    def test_supports_unicode_with_latin1_encoding(self, mock_stdout):
+        """Test that Latin-1 encoding returns False (can't encode symbols)."""
         mock_stdout.encoding = 'latin-1'
-        mock_platform.return_value = 'Linux'
         self.assertFalse(_supports_unicode())
-
-    @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_with_none_encoding_on_windows(self, mock_platform, mock_stdout):
-        """Test that None encoding on Windows returns False."""
-        mock_stdout.encoding = None
-        mock_platform.return_value = 'Windows'
-        self.assertFalse(_supports_unicode())
-
-    @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_with_none_encoding_on_linux(self, mock_platform, mock_stdout):
-        """Test that None encoding on Linux returns False for safety."""
-        mock_stdout.encoding = None
-        mock_platform.return_value = 'Linux'
-        self.assertFalse(_supports_unicode())
-
-    @patch('tasktree.cli.sys.stdout')
-    @patch('tasktree.cli.platform.system')
-    def test_supports_unicode_without_encoding_attribute(self, mock_platform, mock_stdout):
-        """Test handling of missing encoding attribute returns False for safety."""
-        # Create a mock without encoding attribute
-        mock_stdout_no_encoding = MagicMock(spec=[])
-        with patch('tasktree.cli.sys.stdout', mock_stdout_no_encoding):
-            mock_platform.return_value = 'Linux'
-            self.assertFalse(_supports_unicode())
 
     @patch('tasktree.cli._supports_unicode')
     def test_get_action_success_string_with_unicode(self, mock_supports):

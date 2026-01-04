@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import platform
+import os
 import sys
 from pathlib import Path
 from typing import Any, List, Optional
@@ -34,16 +34,20 @@ def _supports_unicode() -> bool:
     Returns:
         True if terminal supports UTF-8, False otherwise
     """
-    # Check if stdout encoding supports UTF-8
-    encoding = getattr(sys.stdout, 'encoding', None)
-    if encoding:
-        # Normalize encoding name: remove hyphens and underscores, convert to lowercase
-        normalized = encoding.lower().replace('-', '').replace('_', '')
-        if normalized.startswith('utf8'):
-            return True
+    # Hard stop: classic Windows console (conhost)
+    if os.name == "nt" and "WT_SESSION" not in os.environ:
+        return False
 
-    # If no UTF-8 detected, default to ASCII for safety
-    return False
+    # Encoding check
+    encoding = sys.stdout.encoding
+    if not encoding:
+        return False
+
+    try:
+        "✓✗".encode(encoding)
+        return True
+    except UnicodeEncodeError:
+        return False
 
 
 def get_action_success_string() -> str:
