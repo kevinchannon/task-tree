@@ -47,40 +47,19 @@ jobs:
           python -m pipx install tasktree
         shell: bash
 
-      - name: Create test recipe
-        run: |
-          cat > tt.yaml << 'EOF'
-          tasks:
-            hello:
-              desc: "Say hello"
-              cmd: echo "Hello from tasktree!"
-
-            greet:
-              desc: "Greet with name"
-              args:
-                - name: { type: str }
-              cmd: echo "Hello, {{ arg.name }}!"
-
-            check-version:
-              desc: "Show tasktree version"
-              cmd: tt --version || python -m tasktree.cli --version || echo "tasktree installed"
-          EOF
-        shell: bash
-
       - name: Test tt --list command
         run: |
-          tt --list || python -m pipx run tasktree --list
-        shell: bash
+          cd example
+          tt --list
 
       - name: Run test task
         run: |
-          tt hello || python -m pipx run tasktree hello
-        shell: bash
+          cd example
+          tt package
 
       - name: Verify installation
         run: |
-          echo "✓ tasktree successfully installed via pipx on ${{ matrix.platform }}"
-        shell: bash
+          echo "✓ tasktree successfully installed via pipx on ${{ matrix.platform }}
 
   validate-centos:
     # Only run if the release workflow succeeded
@@ -112,34 +91,15 @@ jobs:
         run: |
           pipx install --python python3.12 tasktree
 
-      - name: Create test recipe
-        run: |
-          cat > tt.yaml << 'EOF'
-          tasks:
-            hello:
-              desc: "Say hello"
-              cmd: echo "Hello from tasktree on CentOS Stream 9!"
-
-            greet:
-              desc: "Greet with name"
-              args:
-                - name: { type: str }
-              cmd: echo "Hello, {{ arg.name }}!"
-
-            check-version:
-              desc: "Show tasktree version"
-              cmd: echo "tasktree installed on CentOS"
-          EOF
-
       - name: Test tt --list command
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          tt --list || $HOME/.local/bin/tt --list
+          cd example
+          tt --list
 
       - name: Run test task
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          tt hello || $HOME/.local/bin/tt hello
+          cd example
+          tt package
 
       - name: Verify installation
         run: |
