@@ -3,10 +3,10 @@ tasks:
     desc: Building outputs (imagine this is a call to Cargo, or gcc, or something)
     args:
       - build_type:
-          choice: [ "debug", "release" ]
+          choices: [ "debug", "release" ]
       - target:
            type: str
-           choice:
+           choices:
              - "x86"
              - "x86_64"
              - "arm"
