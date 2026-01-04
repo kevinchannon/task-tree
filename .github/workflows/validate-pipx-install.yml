@@ -24,6 +24,9 @@ jobs:
             platform: Windows
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Wait for PyPI propagation
         if: github.event_name == 'workflow_run'
         run: |
@@ -51,11 +54,13 @@ jobs:
         working-directory: example
         run: |
           tt --list
+        shell: bash
 
       - name: Run test task
         working-directory: example
         run: |
           tt package
+        shell: bash
 
       - name: Verify installation
         run: |
@@ -69,6 +74,9 @@ jobs:
       image: quay.io/centos/centos:stream9
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Wait for PyPI propagation
         if: github.event_name == 'workflow_run'
         run: |
@@ -78,28 +86,34 @@ jobs:
       - name: Install dependencies
         run: |
           dnf install -y python python-pip
+        shell: bash
 
       - name: Install Python 3.12
         run: dnf install -y python3.12
+        shell: bash
 
       - name: Install pipx with Python 3.12
         run: |
           pip install pipx
           pipx ensurepath
+        shell: bash
 
       - name: Install tasktree via pipx with Python 3.12
         run: |
           pipx install --python python3.12 tasktree
+        shell: bash
 
       - name: Test tt --list command
         working-directory: example
         run: |
           tt --list
+        shell: bash
 
       - name: Run test task
         working-directory: example
         run: |
           tt package
+        shell: bash
 
       - name: Verify installation
         run: |
