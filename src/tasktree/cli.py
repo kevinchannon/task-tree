@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import sys
 from pathlib import Path
 from typing import Any, List, Optional
 
@@ -24,6 +26,46 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 console = Console()
+
+
+def _supports_unicode() -> bool:
+    """Check if the terminal supports Unicode characters.
+
+    Returns:
+        True if terminal supports UTF-8, False otherwise
+    """
+    # Hard stop: classic Windows console (conhost)
+    if os.name == "nt" and "WT_SESSION" not in os.environ:
+        return False
+
+    # Encoding check
+    encoding = sys.stdout.encoding
+    if not encoding:
+        return False
+
+    try:
+        "✓✗".encode(encoding)
+        return True
+    except UnicodeEncodeError:
+        return False
+
+
+def get_action_success_string() -> str:
+    """Get the appropriate success symbol based on terminal capabilities.
+
+    Returns:
+        Unicode tick symbol (✓) if terminal supports UTF-8, otherwise "[ OK ]"
+    """
+    return "✓" if _supports_unicode() else "[ OK ]"
+
+
+def get_action_failure_string() -> str:
+    """Get the appropriate failure symbol based on terminal capabilities.
+
+    Returns:
+        Unicode cross symbol (✗) if terminal supports UTF-8, otherwise "[ FAIL ]"
+    """
+    return "✗" if _supports_unicode() else "[ FAIL ]"
 
 
 def _format_task_arguments(arg_specs: list[str | dict]) -> str:
@@ -324,7 +366,7 @@ def _clean_state(tasks_file: Optional[str] = None) -> None:
 
     if state_path.exists():
         state_path.unlink()
-        console.print(f"[green]✓ Removed {state_path}[/green]")
+        console.print(f"[green]{get_action_success_string()} Removed {state_path}[/green]")
         console.print("All tasks will run fresh on next execution")
     else:
         console.print(f"[yellow]No state file found at {state_path}[/yellow]")
@@ -410,9 +452,9 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
     state.save()
     try:
         executor.execute_task(task_name, args_dict, force=force, only=only)
-        console.print(f"[green]✓ Task '{task_name}' completed successfully[/green]")
+        console.print(f"[green]{get_action_success_string()} Task '{task_name}' completed successfully[/green]")
     except Exception as e:
-        console.print(f"[red]✗ Task '{task_name}' failed: {e}[/red]")
+        console.print(f"[red]{get_action_failure_string()} Task '{task_name}' failed: {e}[/red]")
         raise typer.Exit(1)
 
 
