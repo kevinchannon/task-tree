@@ -100,26 +100,17 @@ jobs:
         run: |
           dnf install -y gcc openssl-devel bzip2-devel libffi-devel zlib-devel wget make
 
-      - name: Download and install Python 3.12
-        run: |
-          cd /tmp
-          wget https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tgz
-          tar xzf Python-3.12.8.tgz
-          cd Python-3.12.8
-          ./configure --enable-optimizations --prefix=/opt/python3.12
-          make altinstall
-          /opt/python3.12/bin/python3.12 --version
+      - name: Install Python 3.12
+        run: dnf install -y python3.12
 
       - name: Install pipx with Python 3.12
         run: |
-          /opt/python3.12/bin/python3.12 -m pip install --user pipx
-          export PATH="$HOME/.local/bin:$PATH"
-          /opt/python3.12/bin/python3.12 -m pipx ensurepath
+          pip install pipx
+          pipx ensurepath
 
       - name: Install tasktree via pipx with Python 3.12
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          /opt/python3.12/bin/python3.12 -m pipx install --python /opt/python3.12/bin/python3.12 tasktree
+          pipx install --python python3.12 tasktree
 
       - name: Create test recipe
         run: |
