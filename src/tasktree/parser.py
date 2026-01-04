@@ -365,12 +365,9 @@ def _resolve_env_variable(var_name: str, env_var_name: str, default: str | None 
     Raises:
         ValueError: If environment variable is not set and no default provided
     """
-    value = os.environ.get(env_var_name)
+    value = os.environ.get(env_var_name, default)
 
     if value is None:
-        if default is not None:
-            return default
-
         raise ValueError(
             f"Environment variable '{env_var_name}' (referenced by variable '{var_name}') is not set.\n\n"
             f"Hint: Set it before running tt:\n"
