@@ -64,7 +64,7 @@ jobs:
 
       - name: Verify installation
         run: |
-          echo "✓ tasktree successfully installed via pipx on ${{ matrix.platform }}
+          echo "✓ tasktree successfully installed via pipx on ${{ matrix.platform }}"
 
   validate-centos:
     # Only run if the release workflow succeeded
