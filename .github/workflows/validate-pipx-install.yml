@@ -50,10 +50,13 @@ jobs:
           python -m pipx install tasktree
         shell: bash
 
+      - name: print path for debug
+        run: echo "path = $PATH"
+        shell: bash
+
       - name: Test tt --list command
         working-directory: example
         run: |
-          echo "path = $PATH"
           tt --list
         shell: bash
 
