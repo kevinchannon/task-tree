@@ -667,6 +667,53 @@ class TestDockerManager(unittest.TestCase):
         self.assertEqual(run_call_args[1], "run")
         self.assertIn("tt-env-builder", run_call_args)
 
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    def test_run_in_container_with_substituted_variables_in_volumes(self, mock_platform, mock_run):
+        """Test that volume mounts work correctly after variable substitution.
+
+        Note: Variable substitution happens in the executor before calling docker manager.
+        This test verifies that the docker manager correctly handles already-substituted paths.
+        """
+        mock_platform.return_value = "Linux"
+
+        # Environment with already-substituted path (as would come from executor)
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+            volumes=["/fake/project:/workspace"],  # Already substituted
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Find the docker run call (should be the 4th call)
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Find the -v flag and its argument
+        volume_flag_index = run_call_args.index("-v")
+        volume_mount = run_call_args[volume_flag_index + 1]
+
+        # Verify the volume mount uses the absolute path correctly
+        self.assertEqual("/fake/project:/workspace", volume_mount)
+
 
 if __name__ == "__main__":
     unittest.main()
