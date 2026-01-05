@@ -575,6 +575,98 @@ class TestDockerManager(unittest.TestCase):
         # Verify --user flag is NOT present when run_as_root=True
         self.assertNotIn("--user", run_call_args)
 
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    def test_run_in_container_includes_extra_args(self, mock_platform, mock_run):
+        """Test that extra_args are properly included in docker run command."""
+        mock_platform.return_value = "Windows"  # Skip user flag for simplicity
+
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+            extra_args=["--memory=512m", "--cpus=1", "--network=host"],
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Find the docker run call (should be the 4th call)
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Verify extra_args are included in the command
+        self.assertIn("--memory=512m", run_call_args)
+        self.assertIn("--cpus=1", run_call_args)
+        self.assertIn("--network=host", run_call_args)
+
+        # Verify extra_args appear before the image tag
+        # Command structure: docker run --rm [extra_args] [volumes] [ports] [env] [image] [shell] -c [cmd]
+        image_index = run_call_args.index("tt-env-builder")
+        memory_index = run_call_args.index("--memory=512m")
+        cpus_index = run_call_args.index("--cpus=1")
+        network_index = run_call_args.index("--network=host")
+
+        # All extra args should appear before the image
+        self.assertLess(memory_index, image_index)
+        self.assertLess(cpus_index, image_index)
+        self.assertLess(network_index, image_index)
+
+    @patch("tasktree.docker.subprocess.run")
+    @patch("tasktree.docker.platform.system")
+    def test_run_in_container_with_empty_extra_args(self, mock_platform, mock_run):
+        """Test that empty extra_args list works correctly."""
+        mock_platform.return_value = "Windows"
+
+        env = Environment(
+            name="builder",
+            dockerfile="./Dockerfile",
+            context=".",
+            shell="sh",
+            extra_args=[],  # Empty list
+        )
+
+        # Mock docker --version, docker build, docker inspect, and docker run
+        def mock_run_side_effect(*args, **kwargs):
+            cmd = args[0]
+            if "inspect" in cmd:
+                result = Mock()
+                result.stdout = "sha256:abc123def456\n"
+                return result
+            return Mock()
+
+        mock_run.side_effect = mock_run_side_effect
+
+        self.manager.run_in_container(
+            env=env,
+            cmd="echo hello",
+            working_dir=Path("/fake/project"),
+            container_working_dir="/workspace",
+        )
+
+        # Should succeed without errors
+        run_call_args = mock_run.call_args_list[3][0][0]
+
+        # Basic command structure should be present
+        self.assertEqual(run_call_args[0], "docker")
+        self.assertEqual(run_call_args[1], "run")
+        self.assertIn("tt-env-builder", run_call_args)
+
 
 if __name__ == "__main__":
     unittest.main()
