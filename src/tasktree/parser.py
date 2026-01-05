@@ -958,6 +958,36 @@ def _parse_file_with_env(
                     extra_args = env_config.get("extra_args", [])
                     run_as_root = env_config.get("run_as_root", False)
 
+                    # Substitute variables in environment fields
+                    if variables:
+                        from tasktree.substitution import substitute_variables
+
+                        # Substitute in volumes
+                        if volumes:
+                            volumes = [substitute_variables(vol, variables) for vol in volumes]
+
+                        # Substitute in ports
+                        if ports:
+                            ports = [substitute_variables(port, variables) for port in ports]
+
+                        # Substitute in env_vars values
+                        if env_vars:
+                            env_vars = {
+                                key: substitute_variables(value, variables)
+                                for key, value in env_vars.items()
+                            }
+
+                        # Substitute in working_dir
+                        if working_dir:
+                            working_dir = substitute_variables(working_dir, variables)
+
+                        # Substitute in build args (dict for Docker environments)
+                        if args and isinstance(args, dict):
+                            args = {
+                                key: substitute_variables(str(value), variables)
+                                for key, value in args.items()
+                            }
+
                     # Validate environment type
                     if not shell and not dockerfile:
                         raise ValueError(

@@ -662,6 +662,60 @@ class Executor:
             except OSError:
                 pass  # Ignore cleanup errors
 
+    def _substitute_builtin_in_environment(self, env: Environment, builtin_vars: dict[str, str]) -> Environment:
+        """Substitute builtin and environment variables in environment fields.
+
+        Args:
+            env: Environment to process
+            builtin_vars: Built-in variable values
+
+        Returns:
+            New Environment with builtin and environment variables substituted
+
+        Raises:
+            ValueError: If builtin variable or environment variable is not defined
+        """
+        from dataclasses import replace
+
+        # Substitute in volumes (builtin vars first, then env vars)
+        substituted_volumes = [
+            self._substitute_env(self._substitute_builtin(vol, builtin_vars)) for vol in env.volumes
+        ] if env.volumes else []
+
+        # Substitute in env_vars values (builtin vars first, then env vars)
+        substituted_env_vars = {
+            key: self._substitute_env(self._substitute_builtin(value, builtin_vars))
+            for key, value in env.env_vars.items()
+        } if env.env_vars else {}
+
+        # Substitute in ports (builtin vars first, then env vars)
+        substituted_ports = [
+            self._substitute_env(self._substitute_builtin(port, builtin_vars)) for port in env.ports
+        ] if env.ports else []
+
+        # Substitute in working_dir (builtin vars first, then env vars)
+        substituted_working_dir = self._substitute_env(self._substitute_builtin(env.working_dir, builtin_vars)) if env.working_dir else ""
+
+        # Substitute in build args (for Docker environments, args is a dict)
+        # Apply builtin vars first, then env vars
+        if isinstance(env.args, dict):
+            substituted_args = {
+                key: self._substitute_env(self._substitute_builtin(str(value), builtin_vars))
+                for key, value in env.args.items()
+            }
+        else:
+            substituted_args = env.args
+
+        # Create new environment with substituted values
+        return replace(
+            env,
+            volumes=substituted_volumes,
+            env_vars=substituted_env_vars,
+            ports=substituted_ports,
+            working_dir=substituted_working_dir,
+            args=substituted_args
+        )
+
     def _run_task_in_docker(
         self, task: Task, env: Any, cmd: str, working_dir: Path,
         exported_env_vars: dict[str, str] | None = None
@@ -678,6 +732,13 @@ class Executor:
         Raises:
             ExecutionError: If Docker execution fails
         """
+        # Get builtin variables for substitution in environment fields
+        task_start_time = datetime.now(timezone.utc)
+        builtin_vars = self._collect_builtin_variables(task, working_dir, task_start_time)
+
+        # Substitute builtin variables in environment fields (volumes, env_vars, etc.)
+        env = self._substitute_builtin_in_environment(env, builtin_vars)
+
         # Resolve container working directory
         container_working_dir = docker_module.resolve_container_working_dir(
             env.working_dir, task.working_dir
