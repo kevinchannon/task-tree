@@ -5,7 +5,161 @@ from pathlib import Path
 from typing import Any
 
 from tasktree.hasher import hash_args
-from tasktree.parser import Recipe, Task, DependencyInvocation, parse_dependency_spec
+from tasktree.parser import (
+    Recipe,
+    Task,
+    DependencyInvocation,
+    parse_dependency_spec,
+    parse_arg_spec,
+)
+from tasktree.substitution import substitute_dependency_args
+
+
+def _get_exported_arg_names(task: Task) -> set[str]:
+    """Extract names of exported arguments from a task.
+
+    Exported arguments are identified by the '$' prefix in their definition.
+
+    Args:
+        task: Task to extract exported arg names from
+
+    Returns:
+        Set of exported argument names (without the '$' prefix)
+
+    Example:
+        Task with args: ["$server", "port"]
+        Returns: {"server"}
+    """
+    if not task.args:
+        return set()
+
+    exported = set()
+    for arg_spec in task.args:
+        if isinstance(arg_spec, str):
+            # Simple string format: "$argname" or "argname"
+            if arg_spec.startswith("$"):
+                exported.add(arg_spec[1:])  # Remove '$' prefix
+        elif isinstance(arg_spec, dict):
+            # Dictionary format: {"$argname": {...}} or {"argname": {...}}
+            for arg_name in arg_spec.keys():
+                if arg_name.startswith("$"):
+                    exported.add(arg_name[1:])  # Remove '$' prefix
+
+    return exported
+
+
+def resolve_dependency_invocation(
+    dep_spec: str | dict[str, Any],
+    parent_task_name: str,
+    parent_args: dict[str, Any],
+    parent_exported_args: set[str],
+    recipe: Recipe
+) -> DependencyInvocation:
+    """Parse dependency specification and substitute parent argument templates.
+
+    This function handles template substitution in dependency arguments. It:
+    1. Checks if dependency arguments contain {{ arg.* }} templates
+    2. Substitutes templates using parent task's arguments
+    3. Delegates to parse_dependency_spec for type conversion and validation
+
+    Args:
+        dep_spec: Dependency specification (str or dict with task name and args)
+        parent_task_name: Name of the parent task (for error messages)
+        parent_args: Parent task's argument values (for template substitution)
+        parent_exported_args: Set of parent's exported argument names
+        recipe: Recipe containing task definitions
+
+    Returns:
+        DependencyInvocation with typed, validated arguments
+
+    Raises:
+        ValueError: If template substitution fails, argument validation fails,
+                   or dependency task doesn't exist
+
+    Examples:
+        Simple string (no templates):
+        >>> resolve_dependency_invocation("build", "test", {}, set(), recipe)
+        DependencyInvocation("build", None)
+
+        Literal arguments (no templates):
+        >>> resolve_dependency_invocation({"build": ["debug"]}, "test", {}, set(), recipe)
+        DependencyInvocation("build", {"mode": "debug"})
+
+        Template substitution:
+        >>> resolve_dependency_invocation(
+        ...     {"build": ["{{ arg.env }}"]},
+        ...     "test",
+        ...     {"env": "production"},
+        ...     set(),
+        ...     recipe
+        ... )
+        DependencyInvocation("build", {"mode": "production"})
+    """
+    # Simple string case - no args to substitute
+    if isinstance(dep_spec, str):
+        return parse_dependency_spec(dep_spec, recipe)
+
+    # Dictionary case: {"task_name": args_spec}
+    if not isinstance(dep_spec, dict) or len(dep_spec) != 1:
+        # Invalid format, let parse_dependency_spec handle the error
+        return parse_dependency_spec(dep_spec, recipe)
+
+    task_name, arg_spec = next(iter(dep_spec.items()))
+
+    # Check if any argument values contain templates
+    has_templates = False
+    if isinstance(arg_spec, list):
+        # Positional args: check each value
+        for val in arg_spec:
+            if isinstance(val, str) and "{{ arg." in val:
+                has_templates = True
+                break
+    elif isinstance(arg_spec, dict):
+        # Named args: check each value
+        for val in arg_spec.values():
+            if isinstance(val, str) and "{{ arg." in val:
+                has_templates = True
+                break
+
+    # If no templates, use existing parser (fast path for backward compatibility)
+    if not has_templates:
+        return parse_dependency_spec(dep_spec, recipe)
+
+    # Template substitution path
+    # Substitute {{ arg.* }} in argument values
+    substituted_arg_spec: list[Any] | dict[str, Any]
+
+    if isinstance(arg_spec, list):
+        # Positional args: substitute each value that's a string
+        substituted_arg_spec = []
+        for val in arg_spec:
+            if isinstance(val, str):
+                substituted_val = substitute_dependency_args(
+                    val, parent_task_name, parent_args, parent_exported_args
+                )
+                substituted_arg_spec.append(substituted_val)
+            else:
+                # Non-string values (bool, int, etc.) pass through unchanged
+                substituted_arg_spec.append(val)
+    elif isinstance(arg_spec, dict):
+        # Named args: substitute each string value
+        substituted_arg_spec = {}
+        for arg_name, val in arg_spec.items():
+            if isinstance(val, str):
+                substituted_val = substitute_dependency_args(
+                    val, parent_task_name, parent_args, parent_exported_args
+                )
+                substituted_arg_spec[arg_name] = substituted_val
+            else:
+                # Non-string values pass through unchanged
+                substituted_arg_spec[arg_name] = val
+    else:
+        # Invalid format, let parse_dependency_spec handle it
+        return parse_dependency_spec(dep_spec, recipe)
+
+    # Create new dep_spec with substituted values and parse it
+    substituted_dep_spec = {task_name: substituted_arg_spec}
+    return parse_dependency_spec(substituted_dep_spec, recipe)
 
 
 class CycleError(Exception):
@@ -99,7 +253,7 @@ def resolve_execution_order(
         return seen_invocations[key]
 
     def build_graph(node: TaskNode) -> None:
-        """Recursively build dependency graph."""
+        """Recursively build dependency graph with template substitution."""
         if node in graph:
             # Already processed
             return
@@ -108,11 +262,21 @@ def resolve_execution_order(
         if task is None:
             raise TaskNotFoundError(f"Task not found: {node.task_name}")
 
-        # Parse and normalize dependencies
+        # Get parent task's exported argument names
+        parent_exported_args = _get_exported_arg_names(task)
+
+        # Parse and normalize dependencies with template substitution
         dep_nodes = set()
         for dep_spec in task.deps:
-            # Parse dependency specification
-            dep_inv = parse_dependency_spec(dep_spec, recipe)
+            # Resolve dependency specification with parent context
+            # This handles template substitution if {{ arg.* }} is present
+            dep_inv = resolve_dependency_invocation(
+                dep_spec,
+                parent_task_name=node.task_name,
+                parent_args=node.args or {},
+                parent_exported_args=parent_exported_args,
+                recipe=recipe
+            )
 
             # Create or get node for this dependency invocation
             dep_node = get_or_create_node(dep_inv.task_name, dep_inv.args)

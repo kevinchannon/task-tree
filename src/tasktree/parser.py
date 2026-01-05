@@ -90,6 +90,31 @@ class Task:
 
 
 @dataclass
+class DependencySpec:
+    """Parsed dependency specification with potential template placeholders.
+
+    This represents a dependency as defined in the recipe file, before template
+    substitution. Argument values may contain {{ arg.* }} templates that will be
+    substituted with parent task's argument values during graph construction.
+
+    Attributes:
+        task_name: Name of the dependency task
+        arg_templates: Dictionary mapping argument names to string templates
+                      (None if no args specified). All values are strings, even
+                      for numeric types, to preserve template placeholders.
+    """
+    task_name: str
+    arg_templates: dict[str, str] | None = None
+
+    def __str__(self) -> str:
+        """String representation for display."""
+        if not self.arg_templates:
+            return self.task_name
+        args_str = ", ".join(f"{k}={v}" for k, v in self.arg_templates.items())
+        return f"{self.task_name}({args_str})"
+
+
+@dataclass
 class DependencyInvocation:
     """Represents a task dependency invocation with optional arguments.
 
@@ -992,13 +1017,171 @@ def _parse_file_with_env(
     return tasks, environments, default_env, variables
 
 
-def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
+def collect_reachable_tasks(tasks: dict[str, Task], root_task: str) -> set[str]:
+    """Collect all tasks reachable from the root task via dependencies.
+
+    Uses BFS to traverse the dependency graph and collect all task names
+    that could potentially be executed when running the root task.
+
+    Args:
+        tasks: Dictionary mapping task names to Task objects
+        root_task: Name of the root task to start traversal from
+
+    Returns:
+        Set of task names reachable from root_task (includes root_task itself)
+
+    Raises:
+        ValueError: If root_task doesn't exist
+
+    Example:
+        >>> tasks = {"a": Task("a", deps=["b"]), "b": Task("b", deps=[]), "c": Task("c", deps=[])}
+        >>> collect_reachable_tasks(tasks, "a")
+        {"a", "b"}
+    """
+    if root_task not in tasks:
+        raise ValueError(f"Root task '{root_task}' not found in recipe")
+
+    reachable = set()
+    queue = [root_task]
+
+    while queue:
+        task_name = queue.pop(0)
+
+        if task_name in reachable:
+            continue  # Already processed
+
+        reachable.add(task_name)
+
+        # Get task and process its dependencies
+        task = tasks.get(task_name)
+        if task is None:
+            # Task not found - will be caught during graph construction
+            continue
+
+        # Add dependency task names to queue
+        for dep_spec in task.deps:
+            # Extract task name from dependency specification
+            if isinstance(dep_spec, str):
+                dep_name = dep_spec
+            elif isinstance(dep_spec, dict) and len(dep_spec) == 1:
+                dep_name = next(iter(dep_spec.keys()))
+            else:
+                # Invalid format - will be caught during graph construction
+                continue
+
+            if dep_name not in reachable:
+                queue.append(dep_name)
+
+    return reachable
+
+
+def collect_reachable_variables(
+    tasks: dict[str, Task],
+    reachable_task_names: set[str]
+) -> set[str]:
+    """Extract variable names used by reachable tasks.
+
+    Searches for {{ var.* }} placeholders in task definitions to determine
+    which variables are actually needed for execution.
+
+    Args:
+        tasks: Dictionary mapping task names to Task objects
+        reachable_task_names: Set of task names that will be executed
+
+    Returns:
+        Set of variable names referenced by reachable tasks
+
+    Example:
+        >>> task = Task("build", cmd="echo {{ var.version }}")
+        >>> collect_reachable_variables({"build": task}, {"build"})
+        {"version"}
+    """
+    import re
+
+    # Pattern to match {{ var.name }}
+    var_pattern = re.compile(r'\{\{\s*var\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}')
+
+    variables = set()
+
+    for task_name in reachable_task_names:
+        task = tasks.get(task_name)
+        if task is None:
+            continue
+
+        # Search in command
+        if task.cmd:
+            for match in var_pattern.finditer(task.cmd):
+                variables.add(match.group(1))
+
+        # Search in description
+        if task.desc:
+            for match in var_pattern.finditer(task.desc):
+                variables.add(match.group(1))
+
+        # Search in working_dir
+        if task.working_dir:
+            for match in var_pattern.finditer(task.working_dir):
+                variables.add(match.group(1))
+
+        # Search in inputs
+        if task.inputs:
+            for input_pattern in task.inputs:
+                for match in var_pattern.finditer(input_pattern):
+                    variables.add(match.group(1))
+
+        # Search in outputs
+        if task.outputs:
+            for output_pattern in task.outputs:
+                for match in var_pattern.finditer(output_pattern):
+                    variables.add(match.group(1))
+
+        # Search in argument defaults
+        if task.args:
+            for arg_spec in task.args:
+                if isinstance(arg_spec, dict):
+                    for arg_dict in arg_spec.values():
+                        if isinstance(arg_dict, dict) and "default" in arg_dict:
+                            default = arg_dict["default"]
+                            if isinstance(default, str):
+                                for match in var_pattern.finditer(default):
+                                    variables.add(match.group(1))
+
+        # Search in dependency argument templates
+        if task.deps:
+            for dep_spec in task.deps:
+                if isinstance(dep_spec, dict):
+                    for arg_spec in dep_spec.values():
+                        # Positional args (list)
+                        if isinstance(arg_spec, list):
+                            for val in arg_spec:
+                                if isinstance(val, str):
+                                    for match in var_pattern.finditer(val):
+                                        variables.add(match.group(1))
+                        # Named args (dict)
+                        elif isinstance(arg_spec, dict):
+                            for val in arg_spec.values():
+                                if isinstance(val, str):
+                                    for match in var_pattern.finditer(val):
+                                        variables.add(match.group(1))
+
+    return variables
+
+
+def parse_recipe(
+    recipe_path: Path,
+    project_root: Path | None = None,
+    root_task: str | None = None
+) -> Recipe:
     """Parse a recipe file and handle imports recursively.
 
     Args:
         recipe_path: Path to the main recipe file
         project_root: Optional project root directory. If not provided, uses recipe file's parent directory.
                      When using --tasks option, this should be the current working directory.
+        root_task: Optional root task for lazy variable evaluation. If provided, only variables
+                  used by tasks reachable from root_task will be evaluated (optimization).
+                  NOTE: Currently this parameter is accepted but lazy evaluation is not yet
+                  implemented - all variables are still evaluated for backward compatibility.
 
     Returns:
         Recipe object with all tasks (including recursively imported tasks)
@@ -1020,6 +1203,14 @@ def parse_recipe(recipe_path: Path, project_root: Path | None = None) -> Recipe:
     tasks, environments, default_env, variables = _parse_file_with_env(
         recipe_path, namespace=None, project_root=project_root
     )
+
+    # TODO: Implement lazy variable evaluation when root_task is provided
+    # This would require:
+    # 1. Deferring variable evaluation until after task parsing
+    # 2. Collecting reachable tasks and variables
+    # 3. Evaluating only reachable variables
+    # 4. Re-substituting variables into task definitions
+    # For now, we evaluate all variables eagerly (current behavior)
 
     return Recipe(
         tasks=tasks,

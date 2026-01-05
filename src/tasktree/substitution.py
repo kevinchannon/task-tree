@@ -195,6 +195,75 @@ def substitute_builtin_variables(text: str, builtin_vars: dict[str, str]) -> str
     return PLACEHOLDER_PATTERN.sub(replace_match, text)
 
 
+def substitute_dependency_args(
+    template_value: str,
+    parent_task_name: str,
+    parent_args: dict[str, Any],
+    exported_args: set[str] | None = None
+) -> str:
+    """Substitute {{ arg.* }} templates in dependency argument values.
+
+    This function substitutes parent task's arguments into dependency argument
+    templates. Only {{ arg.* }} placeholders are allowed in dependency arguments.
+
+    Args:
+        template_value: String that may contain {{ arg.* }} placeholders
+        parent_task_name: Name of parent task (for error messages)
+        parent_args: Parent task's argument values
+        exported_args: Set of parent's exported argument names
+
+    Returns:
+        String with {{ arg.* }} placeholders substituted
+
+    Raises:
+        ValueError: If template references undefined arg, uses exported arg,
+                   or contains non-arg placeholders ({{ var.* }}, {{ env.* }}, {{ tt.* }})
+
+    Example:
+        >>> substitute_dependency_args("{{ arg.mode }}", "build", {"mode": "debug"})
+        'debug'
+    """
+    # Check for disallowed placeholder types in dependency args
+    # Only {{ arg.* }} is allowed, not {{ var.* }}, {{ env.* }}, or {{ tt.* }}
+    for match in PLACEHOLDER_PATTERN.finditer(template_value):
+        prefix = match.group(1)
+        name = match.group(2)
+
+        if prefix == "var":
+            raise ValueError(
+                f"Task '{parent_task_name}': dependency argument contains {{ var.{name} }}\n"
+                f"Template: {template_value}\n\n"
+                f"Variables ({{ var.* }}) are not allowed in dependency arguments.\n"
+                f"Variables are substituted at parse time, use them directly in task definitions.\n"
+                f"In dependency arguments, only {{ arg.* }} templates are supported."
+            )
+        elif prefix == "env":
+            raise ValueError(
+                f"Task '{parent_task_name}': dependency argument contains {{ env.{name} }}\n"
+                f"Template: {template_value}\n\n"
+                f"Environment variables ({{ env.* }}) are not allowed in dependency arguments.\n"
+                f"In dependency arguments, only {{ arg.* }} templates are supported."
+            )
+        elif prefix == "tt":
+            raise ValueError(
+                f"Task '{parent_task_name}': dependency argument contains {{ tt.{name} }}\n"
+                f"Template: {template_value}\n\n"
+                f"Built-in variables ({{ tt.* }}) are not allowed in dependency arguments.\n"
+                f"In dependency arguments, only {{ arg.* }} templates are supported."
+            )
+
+    # Substitute {{ arg.* }} using parent's arguments
+    try:
+        return substitute_arguments(template_value, parent_args, exported_args)
+    except ValueError as e:
+        # Re-raise with more context
+        raise ValueError(
+            f"Task '{parent_task_name}': error in dependency argument substitution\n"
+            f"Template: {template_value}\n"
+            f"Error: {str(e)}"
+        ) from e
+
+
 def substitute_all(text: str, variables: dict[str, str], args: dict[str, Any]) -> str:
     """Substitute all placeholder types: variables, arguments, environment.
 

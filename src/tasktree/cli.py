@@ -14,8 +14,8 @@ from rich.tree import Tree
 
 from tasktree import __version__
 from tasktree.executor import Executor
-from tasktree.graph import build_dependency_tree
-from tasktree.hasher import hash_task
+from tasktree.graph import build_dependency_tree, resolve_execution_order
+from tasktree.hasher import hash_task, hash_args
 from tasktree.parser import Recipe, find_recipe_file, parse_arg_spec, parse_recipe
 from tasktree.state import StateManager
 from tasktree.types import get_click_type
@@ -443,11 +443,34 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
     state.load()
     executor = Executor(recipe, state)
 
-    # Prune state before execution (compute hashes with effective environment and dependencies)
-    valid_hashes = {
-        hash_task(t.cmd, t.outputs, t.working_dir, t.args, executor._get_effective_env_name(t), t.deps)
-        for t in recipe.tasks.values()
-    }
+    # Resolve execution order to determine which tasks will actually run
+    # This is important for correct state pruning after template substitution
+    execution_order = resolve_execution_order(recipe, task_name, args_dict)
+
+    # Prune state based on tasks that will actually execute (with their specific arguments)
+    # This ensures template-substituted dependencies are handled correctly
+    valid_hashes = set()
+    for exec_task_name, exec_task_args in execution_order:
+        task = recipe.tasks[exec_task_name]
+        # Compute base task hash
+        task_hash = hash_task(
+            task.cmd,
+            task.outputs,
+            task.working_dir,
+            task.args,
+            executor._get_effective_env_name(task),
+            task.deps
+        )
+
+        # If task has arguments, append args hash to create unique cache key
+        if exec_task_args:
+            args_hash = hash_args(exec_task_args)
+            cache_key = f"{task_hash}__{args_hash}"
+        else:
+            cache_key = task_hash
+
+        valid_hashes.add(cache_key)
+
     state.prune(valid_hashes)
     state.save()
     try:
