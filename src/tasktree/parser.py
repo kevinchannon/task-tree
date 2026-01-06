@@ -232,7 +232,7 @@ class Recipe:
             # (CLI will provide its own "Task not found" error)
             try:
                 reachable_tasks = collect_reachable_tasks(self.tasks, root_task)
-                variables_to_eval = collect_reachable_variables(self.tasks, reachable_tasks)
+                variables_to_eval = collect_reachable_variables(self.tasks, self.environments, reachable_tasks)
             except ValueError:
                 # Root task not found - fall back to eager evaluation
                 # This allows the recipe to be parsed even with invalid task names
@@ -1311,15 +1311,17 @@ def collect_reachable_tasks(tasks: dict[str, Task], root_task: str) -> set[str]:
 
 def collect_reachable_variables(
     tasks: dict[str, Task],
+    environments: dict[str, Environment],
     reachable_task_names: set[str]
 ) -> set[str]:
     """Extract variable names used by reachable tasks.
 
-    Searches for {{ var.* }} placeholders in task definitions to determine
+    Searches for {{ var.* }} placeholders in task and environment definitions to determine
     which variables are actually needed for execution.
 
     Args:
         tasks: Dictionary mapping task names to Task objects
+        environments: Dictionary mapping environment names to Environment objects
         reachable_task_names: Set of task names that will be executed
 
     Returns:
@@ -1397,6 +1399,42 @@ def collect_reachable_variables(
                                 if isinstance(val, str):
                                     for match in var_pattern.finditer(val):
                                         variables.add(match.group(1))
+
+        if task.env:
+            if task.env in environments:
+                env = environments[task.env]
+
+                if env.dockerfile and env.dockerfile != "":
+                    for match in var_pattern.finditer(env.dockerfile):
+                        variables.add(match.group(1))
+
+                    if env.context != "":
+                        for match in var_pattern.finditer(env.context):
+                            variables.add(match.group(1))
+
+                    if 0 != len(env.volumes):
+                        for v in env.volumes:
+                            for match in var_pattern.finditer(v):
+                                variables.add(match.group(1))
+
+                    if 0 != len(env.ports):
+                        for p in env.ports:
+                            for match in var_pattern.finditer(p):
+                                variables.add(match.group(1))
+
+                    if 0 != len(env.env_vars):
+                        for k, v in env.env_vars.items():
+                            for match in var_pattern.finditer(v):
+                                variables.add(match.group(1))
+
+                    if env.working_dir != "":
+                        for match in var_pattern.finditer(env.working_dir):
+                            variables.add(match.group(1))
+
+                    if 0 != len(env.extra_args):
+                        for e in env.extra_args:
+                            for match in var_pattern.finditer(e):
+                                variables.add(match.group(1))
 
     return variables
 
