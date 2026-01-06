@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=https://raw.githubusercontent.com/kevinchannon/tasktree/main/schema/tasktree-schema.json
+# yaml-language-server: $schema=schema/tasktree-schema.json
 
 tasks:
   dev-setup:
