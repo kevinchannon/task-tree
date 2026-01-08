@@ -112,7 +112,7 @@ def _list_tasks(tasks_file: Optional[str] = None):
 
     # Calculate maximum task name length for fixed-width column (only visible tasks)
     visible_task_names = [name for name in recipe.task_names()
-                          if not recipe.get_task(name).private]
+                          if recipe.get_task(name) and not recipe.get_task(name).private]
     max_task_name_len = max(len(name) for name in visible_task_names) if visible_task_names else 0
 
     # Create borderless table with three columns
