@@ -73,7 +73,8 @@
               "type": "array",
               "items": {
                 "type": "string"
-              }
+              },
+              "minItems": 1
             },
             "ports": {
               "description": "Port mappings for Docker container (format: 'host_port:container_port')",
@@ -92,6 +93,14 @@
             "working_dir": {
               "type": "string",
               "description": "Working directory inside the container (for Docker environments) or on the host (for shell environments)"
+            },
+            "extra_args": {
+              "description": "Additional arguments to pass to docker run",
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
             }
           },
           "additionalProperties": false
@@ -128,6 +137,11 @@
                 "env": {
                   "type": "string",
                   "description": "Name of environment variable to read",
+                  "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+                },
+                "default": {
+                  "type": "string",
+                  "description": "Value to use if the environment variable is not defined",
                   "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
                 }
               },
@@ -228,9 +242,21 @@
                   "items": {
                     "type": "string"
                   }
-                },
-                {
-                  "type": "string"
+                },{
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "description": "The type of the argument (int, float, bool, string, path, ip, ipv4, ipv6, email, hostname")
+                      },
+                      "default": {
+                        "type": "string",
+                        "description": "The default value of the argument"
+                      }
+                    }
+                  }
                 }
               ]
             },
