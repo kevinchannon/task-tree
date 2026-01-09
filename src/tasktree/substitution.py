@@ -12,13 +12,13 @@ from typing import Any
 # Pattern matches: {{ prefix.name }} with optional whitespace
 # Groups: (1) prefix (var|arg|env|tt), (2) name (identifier)
 PLACEHOLDER_PATTERN = re.compile(
-    r'\{\{\s*(var|arg|env|tt)\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
+    r'\{\{\s*(var|arg|env|tt)\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
 )
 
 # Pattern matches: {{ dep.task_name.outputs.output_name }} with optional whitespace
 # Groups: (1) task_name (can include dots for namespacing), (2) output_name (identifier)
 DEP_OUTPUT_PATTERN = re.compile(
-    r'\{\{\s*dep\s*\.\s*([a-zA-Z_][a-zA-Z0-9_.-]*)\s*\.\s*outputs\s*\.\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
+    r'\{\{\s*dep\.([a-zA-Z_][a-zA-Z0-9_.-]*)\.outputs\.([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}'
 )
 
 
