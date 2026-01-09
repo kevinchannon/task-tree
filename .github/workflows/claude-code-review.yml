@@ -48,6 +48,8 @@ jobs:
             - Test coverage
 
             Use the repository's CLAUDE.md for guidance on style and conventions. Be constructive and helpful in your feedback.
+            
+            At the end of the review, create a tickbox list of the actions arising from the review, suitable for pasting into a comment for Claude Code to work on.
 
             Use `gh pr comment` with your Bash tool to leave your review as a comment on the PR.
 
