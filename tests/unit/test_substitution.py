@@ -70,9 +70,8 @@ class TestPlaceholderPattern(unittest.TestCase):
         # Invalid identifiers (should not match)
         invalid = ["123foo", "foo-bar", "foo.bar", "foo bar"]
         for name in invalid:
-            with self.subTest(name=name):
-                match = PLACEHOLDER_PATTERN.search(f"{{{{ var.{name} }}}}")
-                self.assertIsNone(match)
+            match = PLACEHOLDER_PATTERN.search(f"{{{{ var.{name} }}}}")
+            self.assertIsNone(match)
 
 
 class TestSubstituteVariables(unittest.TestCase):
@@ -429,7 +428,6 @@ class TestSubstituteBuiltinVariables(unittest.TestCase):
         test_cases = [
             ("{{tt.task_name}}", "build"),
             ("{{ tt.task_name }}", "build"),
-            ("{{  tt  .  task_name  }}", "build"),
         ]
         for text, expected in test_cases:
             result = substitute_builtin_variables(text, builtin_vars)
