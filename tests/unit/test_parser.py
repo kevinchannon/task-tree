@@ -1303,6 +1303,69 @@ class TestFindRecipeFile(unittest.TestCase):
             self.assertIn("Multiple recipe files found", error_msg)
             self.assertIn("--tasks", error_msg)
 
+    def test_find_recipe_file_prefers_standard_over_tasks(self):
+        """Test that standard recipe files are preferred over *.tasks files."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            standard_file = project_root / "tasktree.yaml"
+            tasks_file = project_root / "build.tasks"
+
+            # Create both files
+            standard_file.write_text("tasks:\n  main:\n    cmd: echo from standard")
+            tasks_file.write_text("tasks:\n  build:\n    cmd: echo from tasks")
+
+            # Should prefer standard file
+            result = find_recipe_file(project_root)
+            self.assertEqual(result, standard_file)
+
+    def test_find_recipe_file_uses_tasks_when_no_standard(self):
+        """Test that *.tasks files are used when no standard files exist."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            tasks_file = project_root / "build.tasks"
+
+            # Create only *.tasks file
+            tasks_file.write_text("tasks:\n  build:\n    cmd: echo test")
+
+            # Should find and use the *.tasks file
+            result = find_recipe_file(project_root)
+            self.assertEqual(result, tasks_file)
+
+    def test_find_recipe_file_standard_precedence_order(self):
+        """Test that tasktree.yaml is preferred over tt.yaml."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            tasktree_file = project_root / "tasktree.yaml"
+            tt_file = project_root / "tt.yaml"
+
+            # Create both standard files
+            tasktree_file.write_text("tasks:\n  from_tasktree:\n    cmd: echo tasktree")
+            tt_file.write_text("tasks:\n  from_tt:\n    cmd: echo tt")
+
+            # Both exist, so should raise error about multiple files
+            with self.assertRaises(ValueError) as cm:
+                find_recipe_file(project_root)
+
+            error_msg = str(cm.exception)
+            self.assertIn("Multiple recipe files found", error_msg)
+
+    def test_find_recipe_file_no_error_with_standard_and_tasks(self):
+        """Test no error when both standard file and *.tasks file exist."""
+        with TemporaryDirectory() as tmpdir:
+            project_root = Path(tmpdir).resolve()
+            standard_file = project_root / "tasktree.yaml"
+            tasks_file1 = project_root / "build.tasks"
+            tasks_file2 = project_root / "deploy.tasks"
+
+            # Create standard file and multiple *.tasks files
+            standard_file.write_text("tasks:\n  main:\n    cmd: echo main")
+            tasks_file1.write_text("tasks:\n  build:\n    cmd: echo build")
+            tasks_file2.write_text("tasks:\n  deploy:\n    cmd: echo deploy")
+
+            # Should use standard file without error (*.tasks files are imports)
+            result = find_recipe_file(project_root)
+            self.assertEqual(result, standard_file)
+
 
 class TestEnvironmentParsing(unittest.TestCase):
     """Test parsing of environments section."""

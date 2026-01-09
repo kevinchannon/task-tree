@@ -233,6 +233,7 @@ tasks:
     outputs: [dist/binary]                 # Output files (glob patterns)
     working_dir: subproject/               # Execution directory (default: project root)
     env: bash-strict                       # Execution environment (optional)
+    private: false                         # Hide from --list output (default: false)
     args:                                   # Task parameters
       - param1                              # Simple argument
       - param2: { type: path, default: "." }  # With type and default
@@ -817,6 +818,40 @@ Hint: Define named outputs like: outputs: [{ missing: 'path/to/file' }]
 - **Deployment pipelines**: Reference exact artifacts to deploy
 - **Configuration propagation**: Pass generated config files through build stages
 
+
+### Private Tasks
+
+Sometimes you may want to define helper tasks that are useful as dependencies but shouldn't be listed when users run `tt --list`. Mark these tasks as private:
+
+```yaml
+tasks:
+  # Private helper task - hidden from --list
+  setup-deps:
+    private: true
+    cmd: |
+      npm install
+      pip install -r requirements.txt
+
+  # Public task that uses the helper
+  build:
+    deps: [setup-deps]
+    cmd: npm run build
+```
+
+**Behavior:**
+- `tt --list` shows only public tasks (`build` in this example)
+- Private tasks can still be executed: `tt setup-deps` works
+- Private tasks work normally as dependencies
+- By default, all tasks are public (`private: false`)
+
+**Use cases:**
+- Internal helper tasks that shouldn't be run directly
+- Implementation details you want to hide from users
+- Shared setup tasks across multiple public tasks
+
+Note that private tasks remain fully functional - they're only hidden from the list view. Users who know the task name can still execute it directly.
+
+
 ## Environment Variables
 
 Task Tree supports reading environment variables in two ways:
@@ -1157,6 +1192,42 @@ At the start of each invocation, state is checked for invalid task hashes and no
 ## Command-Line Options
 
 Task Tree provides several command-line options for controlling task execution:
+
+### Recipe File Selection
+
+Task Tree automatically discovers recipe files in the current directory and parent directories. You can also explicitly specify which file to use.
+
+**Automatic Discovery:**
+
+Task Tree searches for recipe files in the following order of preference:
+
+1. **Standard recipe files** (searched first, in order):
+   - `tasktree.yaml`
+   - `tasktree.yml`
+   - `tt.yaml`
+
+2. **Import files** (searched only if no standard files found):
+   - `*.tasks` files (e.g., `build.tasks`, `deploy.tasks`)
+
+If multiple files of the same priority level exist in the same directory, Task Tree will report an error and ask you to specify which file to use with `--tasks`.
+
+**Manual Selection:**
+
+```bash
+# Specify a recipe file explicitly
+tt --tasks build.tasks build
+tt -T custom-recipe.yaml test
+
+# Useful when you have multiple recipe files in the same directory
+tt --tasks ci.yaml deploy
+```
+
+**File Search Behavior:**
+
+- Task Tree searches **upward** from the current directory to find recipe files
+- **Standard recipe files** (`.yaml`/`.yml`) are always preferred over `*.tasks` files
+- `*.tasks` files are typically used for imports and are only used as main recipes if no standard files exist
+- The `.tasktree-state` file is created in the directory containing the recipe file
 
 ### Execution Control
 

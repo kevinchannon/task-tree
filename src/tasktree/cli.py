@@ -110,8 +110,13 @@ def _list_tasks(tasks_file: Optional[str] = None):
         console.print("[red]No recipe file found (tasktree.yaml, tasktree.yml, tt.yaml, or *.tasks)[/red]")
         raise typer.Exit(1)
 
-    # Calculate maximum task name length for fixed-width column
-    max_task_name_len = max(len(name) for name in recipe.task_names()) if recipe.task_names() else 0
+    # Calculate maximum task name length for fixed-width column (only visible tasks)
+    visible_task_names = []
+    for name in recipe.task_names():
+        task = recipe.get_task(name)
+        if task and not task.private:
+            visible_task_names.append(name)
+    max_task_name_len = max(len(name) for name in visible_task_names) if visible_task_names else 0
 
     # Create borderless table with three columns
     table = Table(show_edge=False, show_header=False, box=None, padding=(0, 2))
@@ -127,6 +132,9 @@ def _list_tasks(tasks_file: Optional[str] = None):
 
     for task_name in sorted(recipe.task_names()):
         task = recipe.get_task(task_name)
+        # Skip private tasks in list output
+        if task and task.private:
+            continue
         desc = task.desc if task else ""
         args_formatted = _format_task_arguments(task.args) if task else ""
 
@@ -344,7 +352,9 @@ def main(
 
         console.print("[bold]Available tasks:[/bold]")
         for task_name in sorted(recipe.task_names()):
-            console.print(f"  - {task_name}")
+            task = recipe.get_task(task_name)
+            if task and not task.private:
+                console.print(f"  - {task_name}")
         console.print("\nUse [cyan]tt --list[/cyan] for detailed information")
         console.print("Use [cyan]tt <task-name>[/cyan] to run a task")
 
@@ -437,7 +447,9 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
         console.print(f"[red]Task not found: {task_name}[/red]")
         console.print("\nAvailable tasks:")
         for name in sorted(recipe.task_names()):
-            console.print(f"  - {name}")
+            task = recipe.get_task(name)
+            if task and not task.private:
+                console.print(f"  - {name}")
         raise typer.Exit(1)
 
     # Parse task arguments
