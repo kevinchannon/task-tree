@@ -268,10 +268,6 @@ tasks:
         from unittest.mock import patch, Mock
         import platform
 
-        # Only run on Linux where we can test Docker
-        if platform.system() != "Linux":
-            self.skipTest("Docker environment tests only run on Linux")
-
         output_file = Path(self.test_dir) / "docker_test.txt"
 
         recipe_content = f"""
@@ -374,10 +370,6 @@ tasks:
         from unittest.mock import patch, Mock
         import platform
         import os
-
-        # Only run on Linux where we can test Docker
-        if platform.system() != "Linux":
-            self.skipTest("Docker environment tests only run on Linux")
 
         # Set test environment variable
         os.environ["TEST_MOUNT_PATH"] = "/test/mount"
