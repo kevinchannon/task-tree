@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest a new feature or improvement for this project
+title: "[Feature] <concise feature title>"
+labels: [enhancement]
+assignees: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Thanks for suggesting an improvement! Please provide as much context as possible.**
+
+  - type: input
+    id: summary
+    attributes:
+      label: Feature Summary
+      description: Short, high-level summary of the requested feature.
+      placeholder: "Add support for IPv6 packet inspection"
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: Motivation & Use Case
+      description: What problem does this solve? Who benefits? Why is this needed?
+      placeholder: |
+        Currently, only IPv4 is supported in the firewall module. Many environments use IPv6 and need equivalent inspection features.
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Feature Description & Requirements
+      description: Describe the change or new capability. List any requirements or constraints.
+      placeholder: |
+        - Support parsing and filtering of IPv6 packets in filter mode.
+        - Update UI to allow IPv6 rule specification.
+        - Follow current module design patterns.
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impact/Alternatives
+      description: How does this improve the project? Are there workarounds or competing solutions?
+      placeholder: |
+        Improves feature parity with other products; current workaround requires separate external processing.
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation notes (optional)
+      description: If you have ideas about implementing this, list them here (API ideas, design notes, related RFCs, etc.)
+      placeholder: |
+        - May require libc updates (for older distros)
+        - Reference: RFC 8200
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Add any other context, mockups, references, or screenshots here.
+      placeholder: "N/A"
