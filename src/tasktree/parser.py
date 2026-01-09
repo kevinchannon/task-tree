@@ -426,19 +426,15 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
     while True:
         candidates = []
 
-        # Check for exact filenames first
+        # Check for exact filenames first (these are preferred)
         for filename in ["tasktree.yaml", "tasktree.yml", "tt.yaml"]:
             recipe_path = current / filename
             if recipe_path.exists():
                 candidates.append(recipe_path)
 
-        # Check for *.tasks files
-        for tasks_file in current.glob("*.tasks"):
-            if tasks_file.is_file():
-                candidates.append(tasks_file)
-
+        # If we found standard recipe files, use the first one
         if len(candidates) > 1:
-            # Multiple recipe files found - ambiguous
+            # Multiple standard recipe files found - ambiguous
             filenames = [c.name for c in candidates]
             raise ValueError(
                 f"Multiple recipe files found in {current}:\n"
@@ -448,6 +444,25 @@ def find_recipe_file(start_dir: Path | None = None) -> Path | None:
             )
         elif len(candidates) == 1:
             return candidates[0]
+
+        # Only check for *.tasks files if no standard recipe files found
+        # (*.tasks files are typically imports, not main recipes)
+        tasks_files = []
+        for tasks_file in current.glob("*.tasks"):
+            if tasks_file.is_file():
+                tasks_files.append(tasks_file)
+
+        if len(tasks_files) > 1:
+            # Multiple *.tasks files found - ambiguous
+            filenames = [t.name for t in tasks_files]
+            raise ValueError(
+                f"Multiple recipe files found in {current}:\n"
+                f"  {', '.join(filenames)}\n\n"
+                f"Please specify which file to use with --tasks (-T):\n"
+                f"  tt --tasks {filenames[0]} <task-name>"
+            )
+        elif len(tasks_files) == 1:
+            return tasks_files[0]
 
         # Move to parent directory
         parent = current.parent

@@ -1193,6 +1193,42 @@ At the start of each invocation, state is checked for invalid task hashes and no
 
 Task Tree provides several command-line options for controlling task execution:
 
+### Recipe File Selection
+
+Task Tree automatically discovers recipe files in the current directory and parent directories. You can also explicitly specify which file to use.
+
+**Automatic Discovery:**
+
+Task Tree searches for recipe files in the following order of preference:
+
+1. **Standard recipe files** (searched first, in order):
+   - `tasktree.yaml`
+   - `tasktree.yml`
+   - `tt.yaml`
+
+2. **Import files** (searched only if no standard files found):
+   - `*.tasks` files (e.g., `build.tasks`, `deploy.tasks`)
+
+If multiple files of the same priority level exist in the same directory, Task Tree will report an error and ask you to specify which file to use with `--tasks`.
+
+**Manual Selection:**
+
+```bash
+# Specify a recipe file explicitly
+tt --tasks build.tasks build
+tt -T custom-recipe.yaml test
+
+# Useful when you have multiple recipe files in the same directory
+tt --tasks ci.yaml deploy
+```
+
+**File Search Behavior:**
+
+- Task Tree searches **upward** from the current directory to find recipe files
+- **Standard recipe files** (`.yaml`/`.yml`) are always preferred over `*.tasks` files
+- `*.tasks` files are typically used for imports and are only used as main recipes if no standard files exist
+- The `.tasktree-state` file is created in the directory containing the recipe file
+
 ### Execution Control
 
 ```bash
