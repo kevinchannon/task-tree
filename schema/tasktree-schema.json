@@ -217,16 +217,31 @@
               ]
             },
             "outputs": {
-              "description": "Output file patterns (glob supported). Task re-runs if outputs missing.",
+              "description": "Output file patterns (glob supported). Supports anonymous outputs (strings) and named outputs (objects). Named outputs can be referenced by dependent tasks using {{ dep.task.outputs.name }}. Task re-runs if outputs missing.",
               "oneOf": [
                 {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "oneOf": [
+                      {
+                        "type": "string",
+                        "description": "Anonymous output file pattern"
+                      },
+                      {
+                        "type": "object",
+                        "description": "Named output (format: { name: 'path/to/file' })",
+                        "minProperties": 1,
+                        "maxProperties": 1,
+                        "additionalProperties": {
+                          "type": "string"
+                        }
+                      }
+                    ]
                   }
                 },
                 {
-                  "type": "string"
+                  "type": "string",
+                  "description": "Single anonymous output file pattern"
                 }
               ]
             },

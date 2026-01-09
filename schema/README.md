@@ -86,7 +86,9 @@ tasks:
     desc: Build the application
     deps: [base.setup]
     inputs: ["src/**/*.rs"]
-    outputs: [target/release/bin]
+    outputs:
+      - binary: target/release/bin    # Named output - can be referenced
+      - target/release/bin.map        # Anonymous output
     cmd: cargo build --release
 
   test:
@@ -100,6 +102,8 @@ tasks:
     args: [environment, region=us-west-1]
     cmd: |
       echo "Deploying to {{ arg.environment }} in {{ arg.region }}"
+      # Reference named output from dependency
+      scp {{ dep.build.outputs.binary }} server:/opt/
       ./deploy.sh {{ arg.environment }} {{ arg.region }}
 ```
 

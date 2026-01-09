@@ -672,6 +672,151 @@ tasks:
     cmd: echo "All tests passed"
 ```
 
+### Dependency Output References
+
+Tasks can reference named outputs from their dependencies, enabling dynamic workflows where build artifacts, generated filenames, and other values are passed between tasks.
+
+**Named Outputs:**
+
+Tasks can define outputs with names for easy referencing:
+
+```yaml
+tasks:
+  build:
+    outputs:
+      - bundle: "dist/app.js"        # Named output
+      - sourcemap: "dist/app.js.map" # Named output
+    cmd: webpack build
+
+  deploy:
+    deps: [build]
+    cmd: |
+      echo "Deploying {{ dep.build.outputs.bundle }}"
+      scp {{ dep.build.outputs.bundle }} server:/var/www/
+      scp {{ dep.build.outputs.sourcemap }} server:/var/www/
+```
+
+**Syntax:**
+
+- **Defining named outputs**: `outputs: [{ name: "path/to/file" }]`
+- **Referencing outputs**: `{{ dep.task_name.outputs.output_name }}`
+- **Mixed format**: Can combine named and anonymous outputs in the same task
+
+**Examples:**
+
+```yaml
+tasks:
+  # Generate a config file
+  generate-config:
+    outputs:
+      - config: "build/config.json"
+    cmd: |
+      mkdir -p build
+      echo '{"version": "1.0.0"}' > build/config.json
+
+  # Compile using the generated config
+  compile:
+    deps: [generate-config]
+    outputs:
+      - binary: "build/app"
+      - symbols: "build/app.sym"
+    cmd: |
+      echo "Using config: {{ dep.generate-config.outputs.config }}"
+      gcc -o build/app src/*.c
+
+  # Package multiple dependency outputs
+  package:
+    deps: [compile]
+    outputs:
+      - archive: "dist/app.tar.gz"
+    cmd: |
+      mkdir -p dist
+      tar czf {{ dep.package.outputs.archive }} \
+        {{ dep.compile.outputs.binary }} \
+        {{ dep.compile.outputs.symbols }}
+```
+
+**Mixed Named and Anonymous Outputs:**
+
+Tasks can have both named and anonymous outputs:
+
+```yaml
+tasks:
+  build:
+    outputs:
+      - binary: "build/app"      # Named - can be referenced
+      - "build/app.debug"        # Anonymous - tracked but not referenceable
+      - manifest: "build/manifest.json"  # Named - can be referenced
+    cmd: make all
+```
+
+**Transitive References:**
+
+Output references work across multiple levels of dependencies:
+
+```yaml
+tasks:
+  base:
+    outputs:
+      - lib: "out/libbase.a"
+    cmd: gcc -c base.c -o out/libbase.a
+
+  middleware:
+    deps: [base]
+    outputs:
+      - lib: "out/libmiddleware.a"
+    cmd: |
+      # Reference the base library
+      gcc -c middleware.c {{ dep.base.outputs.lib }} -o out/libmiddleware.a
+
+  app:
+    deps: [middleware]
+    cmd: |
+      # Reference middleware, which transitively used base
+      gcc main.c {{ dep.middleware.outputs.lib }} -o app
+```
+
+**Key Behaviors:**
+
+- **Template resolution**: Output references are resolved during dependency graph planning (in topological order)
+- **Fail-fast validation**: Errors are caught before execution begins
+- **Clear error messages**: If an output name doesn't exist, you get a list of available named outputs
+- **Backward compatible**: Existing anonymous outputs (`outputs: ["file.txt"]`) work unchanged
+- **Automatic input tracking**: Named outputs are automatically tracked as implicit inputs for dependent tasks
+
+**Error Messages:**
+
+If you reference a non-existent output:
+
+```yaml
+tasks:
+  build:
+    outputs:
+      - bundle: "dist/app.js"
+    cmd: webpack build
+
+  deploy:
+    deps: [build]
+    cmd: echo "{{ dep.build.outputs.missing }}"  # Error!
+```
+
+You'll get a clear error before execution:
+
+```
+Task 'deploy' references output 'missing' from task 'build',
+but 'build' has no output named 'missing'.
+Available named outputs in 'build': bundle
+Hint: Define named outputs like: outputs: [{ missing: 'path/to/file' }]
+```
+
+**Use Cases:**
+
+- **Dynamic artifact names**: Pass generated filenames between tasks
+- **Build metadata**: Reference manifests, checksums, or version files
+- **Multi-stage builds**: Chain compilation steps with specific output references
+- **Deployment pipelines**: Reference exact artifacts to deploy
+- **Configuration propagation**: Pass generated config files through build stages
+
 ## Environment Variables
 
 Task Tree supports reading environment variables in two ways:
