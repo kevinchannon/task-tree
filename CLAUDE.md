@@ -9,50 +9,99 @@ Task Tree (tt) is a task automation tool that combines simple command execution 
 - **Intelligent incremental execution**: Tasks only run when necessary based on input changes, dependency updates, or task definition changes
 - **YAML-based task definition**: Tasks are defined in `tasktree.yaml` or `tt.yaml` files with dependencies, inputs, outputs, and commands
 - **Automatic input inheritance**: Tasks automatically inherit inputs from dependencies
-- **Parameterized tasks**: Tasks can accept typed arguments with defaults
+- **Parameterized tasks**: Tasks can accept typed arguments with defaults and constraints (int, float, bool, str, path, datetime, hostname, email, IP addresses)
 - **File imports**: Task definitions can be split across multiple files and namespaced
+- **Environment definitions**: Named execution environments (shell with custom configuration, or Docker containers with full image building support)
+- **Template substitution**: Rich variable system with access to arguments, environment variables, built-in variables, dependency outputs, and task inputs/outputs
+- **Docker support**: Full Docker integration with volume mounts, port mappings, build arguments, and user mapping
+- **Named inputs/outputs**: Reference specific inputs and outputs by name for better clarity and DRY principles
+
+## IMPORTANT! Development philosophies
+
+### Small, incremental changes
+The project team requires that each commit contains a small number of changes. Ideally, just the addition of a new line or statement in the code and an accompanying unit test (or tests) that validate the functionality of that line.
+
+Tickets and features should be iteratively broken down until they can be implemented as a series of small commits.
+
+#### Local Claude Code work 
+When working locally on a user's machine, Claude Code should NEVER make commits - only stop and ask the user to review and commit, before carrying on with the next incremental change.
+
+#### GitHub Claude Code integration work
+When working as a GitHub agent, claude should still BREAK DOWN THE TASK into small, incremental commits, but commit those changes to the feature branch as they are made. GitHub integration Claude Code does not need to ask for permission to commit each change.
+
+### Write tests, not ad hoc test scripts
+If you are checking that a feature you are implementing has been implemented correctly, DO NOT write a bespoke test script to check the output of the app with the new functionality. INSTEAD, write a unit/integration/end-to-end test that will confirm you have correctly implemented the feature and RUN JUST THAT TEST. If it passes, you have implemented things correctly; and you can either carry on with additional parts of the feature, or run all the tests to ensure no regressions.
+
+It is still permissible to write and run an ad hoc script to investigate/confirm the current behaviour. Although, it is better to first search for a test that does the thing that you're investigating. If one exists and is passing: then the app does the thing.
+
+### Try to be efficient with token usage
+Your sponsor is not made of money! Try to minimise token useage, so that we can maximise the effectiveness of Claude Code on a features per token basis. Obviously, if a thing needs doing and it takes a bunch of tokens, that's just the way it is. Just try to consider/avoid profligacy!
+
+### Architectural philosophies
+
+- Try to follow SOLID principles
+- Try to follow the advice in "Clean Code", by Robert Martin.
+- Try to keep algorithmic logic abstracted from the TYPES that the logic can be run on. This is a restatement of the Liskov Substitution principle covered in the SOLID principles
+- **Small, named functions are preferred over comments**.  If a comment on WHAT the code is doing feels warranted, then refactor that code into a function with an indicative name.  Comment on WHY code is like it is are more permissible.
 
 ## Architecture
 
 ### Core Components
 
-- **`src/tasktree/tasks.py`**: Core task execution logic using subprocess to run shell commands
-- **`src/tasktree/cli.py`**: Command-line interface (currently minimal)
-- **`main.py`**: Entry point for the application
-- **`tests/unit/test_tasks.py`**: Unit tests using Python's unittest framework
+- **`src/tasktree/parser.py`** (2,415 lines): YAML recipe parsing, task and environment definitions, circular import detection, schema validation
+- **`src/tasktree/executor.py`** (1,200 lines): Task execution logic, incremental execution engine, state tracking, built-in variables, subprocess management
+- **`src/tasktree/cli.py`** (591 lines): Typer-based CLI with commands: `--list`, `--show`, `--tree`, `--force`, `--only`, `--dry-run`, `--verbose`
+- **`src/tasktree/graph.py`** (545 lines): Dependency resolution using graphlib.TopologicalSorter, parameterized dependencies, cycle detection
+- **`src/tasktree/docker.py`** (446 lines): Docker image building and container execution, user mapping, volume mounts, build args
+- **`src/tasktree/substitution.py`** (374 lines): Template variable substitution engine supporting multiple prefixes (var, arg, env, tt, dep, self)
+- **`src/tasktree/types.py`** (139 lines): Custom Click parameter types for argument validation (hostname, email, IP, IPv4, IPv6, datetime)
+- **`src/tasktree/hasher.py`** (161 lines): Task hashing for incremental execution, cache key generation, environment definition hashing
+- **`src/tasktree/state.py`** (119 lines): State file management (.tasktree-state), task execution state tracking
 
 ### Key Dependencies
 
 - **PyYAML**: For recipe parsing
-- **Typer, Click, Rich**: For CLI (mentioned in README but not yet implemented)
+- **Typer, Click, Rich**: For CLI and rich terminal output
 - **graphlib.TopologicalSorter**: For dependency resolution
 - **pathlib**: For file operations and glob expansion
+- **docker (Python SDK)**: For Docker image building and container management
+- **jsonschema**: For YAML schema validation
 
 ## Development Commands
 
 ### Testing
 ```bash
-python -m pytest tests/
+python3 -m pytest tests/
 ```
+
+The project has **656 tests** across three categories:
+- **Unit tests** (`tests/unit/`): 15 test files covering parser, executor, graph, hasher, types, substitution, state
+- **Integration tests** (`tests/integration/`): 21 test files for CLI options, parameterized tasks, Docker, variables, arg validation
+- **E2E tests** (`tests/e2e/`): 5 test files for Docker volumes, ownership, environment, and basic functionality
 
 ### Running the Application
 ```bash
-python main.py
+python3 main.py [task-names] [--options]
 ```
 
 ### Package Management
-This project uses `uv` for dependency management (indicated by `uv.lock` file).
+This project uses `uv` for dependency management (indicated by `uv.lock` file). Configuration is in `pyproject.toml`.
 
 ## State Management
 
 The application uses a `.tasktree-state` file at the project root to track:
 - When tasks last ran
 - Timestamps of input files at execution time
-- Task hashes based on command, outputs, and working directory
+- Task hashes based on command, outputs, working directory, arguments, and environment definitions
+- Cached results for incremental execution
 
 ## Testing Approach
 
-The project uses Python's built-in `unittest` framework with mocking via `unittest.mock`. Tests focus on verifying subprocess calls for task execution.
+The project uses Python's built-in `unittest` framework with:
+- `unittest.mock` for mocking subprocess calls and external dependencies
+- `click.testing.CliRunner` for CLI testing
+- Comprehensive coverage across unit, integration, and E2E test layers
+- Tests verify subprocess calls, Docker operations, state management, and CLI behavior
 
 ## Task Definition Format
 
@@ -61,10 +110,91 @@ Tasks are defined in YAML with the following structure:
 tasks:
   task-name:
     desc: Description (optional)
-    deps: [dependency-tasks]
-    inputs: [glob-patterns]
-    outputs: [glob-patterns]
+    deps: [dependency-tasks]  # Can include parameterized dependencies: dep-name(arg1, key=value)
+    inputs:
+      - pattern1  # Anonymous glob patterns
+      - name: glob-pattern  # Named inputs for reference
+    outputs:
+      - pattern1  # Anonymous glob patterns
+      - name: path-or-pattern  # Named outputs for reference
     working_dir: execution-directory
-    args: [typed-parameters]
-    cmd: shell-command
+    env: environment-name  # Reference to environment definition
+    args:
+      - name: arg-name
+        type: str|int|float|bool|path|datetime|hostname|email|ip|ipv4|ipv6
+        default: value
+        choices: [option1, option2]  # Optional constraint
+        min: value  # Optional for numeric types
+        max: value  # Optional for numeric types
+        exported: true  # Export as $ARG_NAME environment variable
+    cmd: shell-command  # Can use {{ var.name }}, {{ arg.name }}, {{ env.NAME }}, {{ tt.* }}, {{ dep.task.outputs.name }}, {{ self.inputs.name }}
+    private: true  # Hide from --list but still executable
+
+environments:
+  env-name:
+    default: true  # Make this the default environment
+    shell: /bin/bash  # Shell environment
+    # OR
+    dockerfile: path/to/Dockerfile  # Docker environment
+    context: build-context-dir
+    image: optional-image-name
+    volumes:
+      - host_path:container_path[:ro]
+    ports:
+      - "host:container"
+    build_args:
+      ARG_NAME: value
+    environment:
+      ENV_VAR: value
+
+variables:
+  var-name: value  # Simple string value
+  var-from-env: { env: ENV_VAR, default: fallback }  # From environment
+  var-from-eval: { eval: "command to run" }  # Runtime command evaluation
+  var-from-file: { read: path/to/file }  # Read file contents
 ```
+
+## Built-in Variables
+
+Tasks have access to these built-in template variables:
+- `{{ tt.project_root }}`: Root directory of the project
+- `{{ tt.recipe_dir }}`: Directory containing the recipe file
+- `{{ tt.task_name }}`: Name of the current task
+- `{{ tt.working_dir }}`: Working directory for task execution
+- `{{ tt.timestamp }}`: ISO 8601 timestamp
+- `{{ tt.timestamp_unix }}`: Unix timestamp
+- `{{ tt.user_home }}`: User's home directory
+- `{{ tt.user_name }}`: Current username
+
+## Key Features
+
+### Template Substitution
+Commands and paths support template substitution with multiple prefixes:
+- `{{ var.name }}`: Variables defined in the `variables` section
+- `{{ arg.name }}`: Task arguments passed on command line
+- `{{ env.NAME }}`: Environment variables
+- `{{ tt.* }}`: Built-in variables (see above)
+- `{{ dep.task_name.outputs.output_name }}`: Outputs from dependency tasks
+- `{{ self.inputs.input_name }}`: Named inputs of the current task
+- `{{ self.outputs.output_name }}`: Named outputs of the current task
+
+### Parameterized Dependencies
+Tasks can pass arguments to their dependencies:
+```yaml
+tasks:
+  caller:
+    deps:
+      - dependency(value1, key=value2)  # Positional and named args
+```
+
+### Docker Integration
+Full Docker support with:
+- Dockerfile-based image building
+- Volume mounts (read-only and read-write)
+- Port mappings
+- User mapping (run as non-root on Unix/macOS)
+- Build arguments separate from shell arguments
+- Environment variable injection
+
+### Schema Validation
+The project includes JSON Schema definitions in `schema/` for validating recipe YAML files.
