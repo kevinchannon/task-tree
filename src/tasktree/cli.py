@@ -14,7 +14,7 @@ from rich.tree import Tree
 
 from tasktree import __version__
 from tasktree.executor import Executor
-from tasktree.graph import build_dependency_tree, resolve_execution_order, resolve_dependency_output_references
+from tasktree.graph import build_dependency_tree, resolve_execution_order, resolve_dependency_output_references, resolve_self_references
 from tasktree.hasher import hash_task, hash_args
 from tasktree.parser import Recipe, find_recipe_file, parse_arg_spec, parse_recipe
 from tasktree.state import StateManager
@@ -467,6 +467,10 @@ def _execute_dynamic_task(args: list[str], force: bool = False, only: bool = Fal
     # Resolve dependency output references in topological order
     # This substitutes {{ dep.*.outputs.* }} templates before execution
     resolve_dependency_output_references(recipe, execution_order)
+
+    # Resolve self-references in topological order
+    # This substitutes {{ self.inputs.* }} and {{ self.outputs.* }} templates
+    resolve_self_references(recipe, execution_order)
 
     # Prune state based on tasks that will actually execute (with their specific arguments)
     # This ensures template-substituted dependencies are handled correctly

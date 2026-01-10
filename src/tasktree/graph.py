@@ -414,6 +414,67 @@ def resolve_dependency_output_references(
         resolved_tasks[task_name] = task
 
 
+def resolve_self_references(
+    recipe: Recipe,
+    ordered_tasks: list[tuple[str, dict[str, Any]]],
+) -> None:
+    """Resolve {{ self.inputs.name }} and {{ self.outputs.name }} references.
+
+    This function walks through tasks and resolves self-references to task's own
+    inputs/outputs. Must be called AFTER resolve_dependency_output_references()
+    so that dependency outputs are already resolved in output paths.
+
+    Args:
+        recipe: Recipe containing task definitions
+        ordered_tasks: List of (task_name, args) tuples in topological order
+
+    Raises:
+        ValueError: If self-reference cannot be resolved (missing name, etc.)
+
+    Example:
+        If task.cmd contains "{{ self.inputs.src }}" and task has input {src: "*.txt"},
+        it will be resolved to "*.txt" (literal string, no glob expansion).
+    """
+    from tasktree.substitution import substitute_self_references
+
+    for task_name, task_args in ordered_tasks:
+        task = recipe.tasks.get(task_name)
+        if task is None:
+            continue
+
+        # Resolve self-references in command
+        if task.cmd:
+            task.cmd = substitute_self_references(
+                task.cmd,
+                task_name,
+                task._input_map,
+                task._output_map,
+            )
+
+        # Resolve self-references in working_dir
+        if task.working_dir:
+            task.working_dir = substitute_self_references(
+                task.working_dir,
+                task_name,
+                task._input_map,
+                task._output_map,
+            )
+
+        # Resolve self-references in argument defaults
+        if task.args:
+            for arg_spec in task.args:
+                if isinstance(arg_spec, dict):
+                    for arg_name, arg_details in arg_spec.items():
+                        if isinstance(arg_details, dict) and "default" in arg_details:
+                            if isinstance(arg_details["default"], str):
+                                arg_details["default"] = substitute_self_references(
+                                    arg_details["default"],
+                                    task_name,
+                                    task._input_map,
+                                    task._output_map,
+                                )
+
+
 def get_implicit_inputs(recipe: Recipe, task: Task) -> list[str]:
     """Get implicit inputs for a task based on its dependencies.
 

@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from tasktree import docker as docker_module
-from tasktree.graph import get_implicit_inputs, resolve_execution_order, resolve_dependency_output_references
+from tasktree.graph import get_implicit_inputs, resolve_execution_order, resolve_dependency_output_references, resolve_self_references
 from tasktree.hasher import hash_args, hash_task, make_cache_key
 from tasktree.parser import Recipe, Task, Environment
 from tasktree.state import StateManager, TaskState
@@ -436,6 +436,10 @@ class Executor:
         # Resolve dependency output references in topological order
         # This substitutes {{ dep.*.outputs.* }} templates before execution
         resolve_dependency_output_references(self.recipe, execution_order)
+
+        # Resolve self-references in topological order
+        # This substitutes {{ self.inputs.* }} and {{ self.outputs.* }} templates
+        resolve_self_references(self.recipe, execution_order)
 
         # Single phase: Check and execute incrementally
         statuses: dict[str, TaskStatus] = {}

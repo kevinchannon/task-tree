@@ -9,6 +9,7 @@ from tasktree.graph import (
     build_dependency_tree,
     get_implicit_inputs,
     resolve_execution_order,
+    resolve_self_references,
 )
 from tasktree.parser import Recipe, Task
 
@@ -192,6 +193,115 @@ class TestBuildDependencyTree(unittest.TestCase):
         # Both b and c should be in deps
         dep_names = {dep["name"] for dep in tree["deps"]}
         self.assertEqual(dep_names, {"b", "c"})
+
+
+class TestResolveSelfReferences(unittest.TestCase):
+    """Test resolve_self_references function."""
+
+    def test_resolve_self_references_in_command(self):
+        """Test that self-references in cmd field are resolved."""
+        task = Task(
+            name="copy",
+            cmd="cp {{ self.inputs.src }} {{ self.outputs.dest }}",
+            inputs=[{"src": "input.txt"}],
+            outputs=[{"dest": "output.txt"}],
+        )
+        tasks = {"copy": task}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("copy", None)]
+
+        resolve_self_references(recipe, ordered_tasks)
+
+        self.assertEqual(task.cmd, "cp input.txt output.txt")
+
+    def test_resolve_self_references_in_working_dir(self):
+        """Test that self-references in working_dir field are resolved."""
+        task = Task(
+            name="build",
+            cmd="make",
+            inputs=[{"project": "myproject"}],
+            working_dir="{{ self.inputs.project }}/build",
+        )
+        tasks = {"build": task}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("build", None)]
+
+        resolve_self_references(recipe, ordered_tasks)
+
+        self.assertEqual(task.working_dir, "myproject/build")
+
+    def test_resolve_self_references_in_arg_defaults(self):
+        """Test that self-references in argument defaults are resolved."""
+        task = Task(
+            name="deploy",
+            cmd="deploy",
+            outputs=[{"artifact": "dist/app.js"}],
+            args=[{"target": {"type": "str", "default": "{{ self.outputs.artifact }}"}}],
+        )
+        tasks = {"deploy": task}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("deploy", None)]
+
+        resolve_self_references(recipe, ordered_tasks)
+
+        # Check that the default was resolved
+        self.assertEqual(task.args[0]["target"]["default"], "dist/app.js")
+
+    def test_resolve_self_references_multiple_tasks(self):
+        """Test that self-references are resolved for multiple tasks."""
+        task1 = Task(
+            name="task1",
+            cmd="process {{ self.inputs.in1 }}",
+            inputs=[{"in1": "file1.txt"}],
+        )
+        task2 = Task(
+            name="task2",
+            cmd="process {{ self.inputs.in2 }}",
+            inputs=[{"in2": "file2.txt"}],
+        )
+        tasks = {"task1": task1, "task2": task2}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("task1", None), ("task2", None)]
+
+        resolve_self_references(recipe, ordered_tasks)
+
+        self.assertEqual(task1.cmd, "process file1.txt")
+        self.assertEqual(task2.cmd, "process file2.txt")
+
+    def test_resolve_self_references_no_refs(self):
+        """Test that tasks without self-references are unchanged."""
+        task = Task(
+            name="build",
+            cmd="make build",
+            inputs=["src/**/*.c"],
+            outputs=["bin/app"],
+        )
+        tasks = {"build": task}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("build", None)]
+
+        resolve_self_references(recipe, ordered_tasks)
+
+        # Command should be unchanged
+        self.assertEqual(task.cmd, "make build")
+
+    def test_resolve_self_references_error_propagates(self):
+        """Test that validation errors from substitute_self_references propagate."""
+        task = Task(
+            name="build",
+            cmd="cp {{ self.inputs.missing }}",  # Reference to non-existent input
+            inputs=[{"src": "file.txt"}],  # Only has 'src', not 'missing'
+        )
+        tasks = {"build": task}
+        recipe = Recipe(tasks=tasks, project_root=Path.cwd(), recipe_path=Path("tasktree.yaml"))
+        ordered_tasks = [("build", None)]
+
+        with self.assertRaises(ValueError) as cm:
+            resolve_self_references(recipe, ordered_tasks)
+
+        error_msg = str(cm.exception)
+        self.assertIn("missing", error_msg)
+        self.assertIn("src", error_msg)  # Available input should be mentioned
 
 
 if __name__ == "__main__":

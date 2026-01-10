@@ -15,6 +15,7 @@ from tasktree.graph import (
     get_implicit_inputs,
     resolve_dependency_output_references,
     resolve_execution_order,
+    resolve_self_references,
 )
 from tasktree.hasher import hash_args, hash_task, make_cache_key
 from tasktree.parser import Recipe, Task, find_recipe_file, parse_arg_spec, parse_recipe
@@ -31,6 +32,7 @@ __all__ = [
     "get_implicit_inputs",
     "resolve_dependency_output_references",
     "resolve_execution_order",
+    "resolve_self_references",
     "hash_args",
     "hash_task",
     "make_cache_key",
