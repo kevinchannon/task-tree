@@ -352,7 +352,21 @@ class Recipe:
             task.cmd = substitute_variables(task.cmd, self.evaluated_variables)
             task.desc = substitute_variables(task.desc, self.evaluated_variables)
             task.working_dir = substitute_variables(task.working_dir, self.evaluated_variables)
-            task.inputs = [substitute_variables(inp, self.evaluated_variables) for inp in task.inputs]
+
+            # Substitute variables in inputs (handle both string and dict inputs)
+            resolved_inputs = []
+            for inp in task.inputs:
+                if isinstance(inp, str):
+                    resolved_inputs.append(substitute_variables(inp, self.evaluated_variables))
+                elif isinstance(inp, dict):
+                    # Named input: substitute the path value
+                    resolved_dict = {}
+                    for name, path in inp.items():
+                        resolved_dict[name] = substitute_variables(path, self.evaluated_variables)
+                    resolved_inputs.append(resolved_dict)
+                else:
+                    resolved_inputs.append(inp)
+            task.inputs = resolved_inputs
 
             # Substitute variables in outputs (handle both string and dict outputs)
             resolved_outputs = []
@@ -1516,8 +1530,15 @@ def collect_reachable_variables(
         # Search in inputs
         if task.inputs:
             for input_pattern in task.inputs:
-                for match in var_pattern.finditer(input_pattern):
-                    variables.add(match.group(1))
+                if isinstance(input_pattern, str):
+                    for match in var_pattern.finditer(input_pattern):
+                        variables.add(match.group(1))
+                elif isinstance(input_pattern, dict):
+                    # Named input - check the path value
+                    for input_path in input_pattern.values():
+                        if isinstance(input_path, str):
+                            for match in var_pattern.finditer(input_path):
+                                variables.add(match.group(1))
 
         # Search in outputs
         if task.outputs:

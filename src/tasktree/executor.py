@@ -865,7 +865,15 @@ class Executor:
         Returns:
             List of input glob patterns
         """
-        all_inputs = list(task.inputs)
+        # Extract paths from inputs (handle both anonymous strings and named dicts)
+        all_inputs = []
+        for inp in task.inputs:
+            if isinstance(inp, str):
+                all_inputs.append(inp)
+            elif isinstance(inp, dict):
+                # Named input - extract the path value(s)
+                all_inputs.extend(inp.values())
+
         implicit_inputs = get_implicit_inputs(self.recipe, task)
         all_inputs.extend(implicit_inputs)
         return all_inputs
