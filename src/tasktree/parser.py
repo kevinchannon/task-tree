@@ -57,7 +57,7 @@ class Task:
     cmd: str
     desc: str = ""
     deps: list[str | dict[str, Any]] = field(default_factory=list)  # Can be strings or dicts with args
-    inputs: list[str] = field(default_factory=list)
+    inputs: list[str | dict[str, str]] = field(default_factory=list)  # Can be strings or dicts with named inputs
     outputs: list[str | dict[str, str]] = field(default_factory=list)  # Can be strings or dicts with named outputs
     working_dir: str = ""
     args: list[str | dict[str, Any]] = field(default_factory=list)  # Can be strings or dicts (each dict has single key: arg name)
@@ -68,6 +68,10 @@ class Task:
     # Internal fields for efficient output lookup (built in __post_init__)
     _output_map: dict[str, str] = field(init=False, default_factory=dict, repr=False)  # name → path mapping
     _anonymous_outputs: list[str] = field(init=False, default_factory=list, repr=False)  # unnamed outputs
+
+    # Internal fields for efficient input lookup (built in __post_init__)
+    _input_map: dict[str, str] = field(init=False, default_factory=dict, repr=False)  # name → path mapping
+    _anonymous_inputs: list[str] = field(init=False, default_factory=list, repr=False)  # unnamed inputs
 
     def __post_init__(self):
         """Ensure lists are always lists and build output maps."""
@@ -130,6 +134,45 @@ class Task:
             else:
                 raise ValueError(
                     f"Task '{self.name}': Output at index {idx} must be a string or dict, got {type(output).__name__}: {output}"
+                )
+
+        # Build input maps for efficient lookup
+        self._input_map = {}
+        self._anonymous_inputs = []
+
+        for idx, input_item in enumerate(self.inputs):
+            if isinstance(input_item, dict):
+                # Named input: validate and store
+                if len(input_item) != 1:
+                    raise ValueError(
+                        f"Task '{self.name}': Named input at index {idx} must have exactly one key-value pair, got {len(input_item)}: {input_item}"
+                    )
+
+                name, path = next(iter(input_item.items()))
+
+                if not isinstance(path, str):
+                    raise ValueError(
+                        f"Task '{self.name}': Named input '{name}' must have a string path, got {type(path).__name__}: {path}"
+                    )
+
+                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', name):
+                    raise ValueError(
+                        f"Task '{self.name}': Named input '{name}' must be a valid identifier "
+                        f"(letters, numbers, underscores, cannot start with number)"
+                    )
+
+                if name in self._input_map:
+                    raise ValueError(
+                        f"Task '{self.name}': Duplicate input name '{name}' at index {idx}"
+                    )
+
+                self._input_map[name] = path
+            elif isinstance(input_item, str):
+                # Anonymous input: just store
+                self._anonymous_inputs.append(input_item)
+            else:
+                raise ValueError(
+                    f"Task '{self.name}': Input at index {idx} must be a string or dict, got {type(input_item).__name__}: {input_item}"
                 )
 
 

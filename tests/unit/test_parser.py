@@ -3163,5 +3163,210 @@ tasks:
             self.assertEqual(len(task._anonymous_outputs), 0)
 
 
+class TestNamedInputs(unittest.TestCase):
+    """Tests for named input functionality."""
+
+    def test_parse_named_input(self):
+        """Test parsing a task with named inputs."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs:
+      - src: "src/app.js"
+      - config: "config/app.json"
+    cmd: build.sh
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            self.assertEqual(len(task.inputs), 2)
+            self.assertIn({"src": "src/app.js"}, task.inputs)
+            self.assertIn({"config": "config/app.json"}, task.inputs)
+
+            # Check internal maps
+            self.assertEqual(task._input_map["src"], "src/app.js")
+            self.assertEqual(task._input_map["config"], "config/app.json")
+            self.assertEqual(len(task._anonymous_inputs), 0)
+
+    def test_parse_mixed_inputs(self):
+        """Test parsing task with both named and anonymous inputs."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  compile:
+    inputs:
+      - src: "src/main.c"
+      - headers: "include/**/*.h"
+      - "vendor/lib.a"
+    cmd: gcc
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["compile"]
+            self.assertEqual(len(task.inputs), 3)
+
+            # Check named inputs
+            self.assertEqual(task._input_map["src"], "src/main.c")
+            self.assertEqual(task._input_map["headers"], "include/**/*.h")
+
+            # Check anonymous inputs
+            self.assertEqual(len(task._anonymous_inputs), 1)
+            self.assertIn("vendor/lib.a", task._anonymous_inputs)
+
+    def test_parse_anonymous_inputs(self):
+        """Test parsing task with only anonymous inputs."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs:
+      - "src/**/*.js"
+      - "config/*.json"
+    cmd: build.sh
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            self.assertEqual(len(task.inputs), 2)
+            self.assertEqual(task.inputs, ["src/**/*.js", "config/*.json"])
+
+            # All should be anonymous
+            self.assertEqual(len(task._input_map), 0)
+            self.assertEqual(len(task._anonymous_inputs), 2)
+
+    def test_named_input_invalid_identifier(self):
+        """Test that invalid identifier names raise error."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs:
+      - invalid-name: "src/app.js"
+    cmd: build.sh
+"""
+            )
+            with self.assertRaises(ValueError) as cm:
+                parse_recipe(recipe_path)
+            error_msg = str(cm.exception)
+            self.assertIn("invalid-name", error_msg)
+            self.assertIn("valid identifier", error_msg)
+
+    def test_named_input_starts_with_number(self):
+        """Test that input names starting with numbers raise error."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs:
+      - 1input: "src/app.js"
+    cmd: build.sh
+"""
+            )
+            with self.assertRaises(ValueError) as cm:
+                parse_recipe(recipe_path)
+            error_msg = str(cm.exception)
+            self.assertIn("1input", error_msg)
+            self.assertIn("valid identifier", error_msg)
+
+    def test_named_input_duplicate_names(self):
+        """Test that duplicate input names raise error."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs:
+      - src: "src/app.js"
+      - src: "src/main.js"
+    cmd: build.sh
+"""
+            )
+            with self.assertRaises(ValueError) as cm:
+                parse_recipe(recipe_path)
+            error_msg = str(cm.exception)
+            self.assertIn("Duplicate", error_msg)
+            self.assertIn("src", error_msg)
+
+    def test_named_input_multiple_keys(self):
+        """Test that input dicts with multiple keys raise error."""
+        task = Task(name="test", cmd="echo test")
+        with self.assertRaises(ValueError) as cm:
+            task.inputs = [{"key1": "path1", "key2": "path2"}]
+            task.__post_init__()
+        error_msg = str(cm.exception)
+        self.assertIn("exactly one key-value pair", error_msg)
+
+    def test_named_input_non_string_path(self):
+        """Test that non-string input paths raise error."""
+        task = Task(name="test", cmd="echo test")
+        with self.assertRaises(ValueError) as cm:
+            task.inputs = [{"src": 123}]
+            task.__post_init__()
+        error_msg = str(cm.exception)
+        self.assertIn("string path", error_msg)
+
+    def test_invalid_input_type(self):
+        """Test that invalid input types raise error."""
+        task = Task(name="test", cmd="echo test")
+        with self.assertRaises(ValueError) as cm:
+            task.inputs = [123]
+            task.__post_init__()
+        error_msg = str(cm.exception)
+        self.assertIn("string or dict", error_msg)
+
+    def test_named_input_valid_identifiers(self):
+        """Test various valid identifier names."""
+        valid_names = ["input", "input_1", "INPUT", "_private", "camelCase", "snake_case"]
+        for name in valid_names:
+            with TemporaryDirectory() as tmpdir:
+                recipe_path = Path(tmpdir) / "tasktree.yaml"
+                recipe_path.write_text(
+                    f"""
+tasks:
+  build:
+    inputs:
+      - {name}: "src/file.txt"
+    cmd: build.sh
+"""
+                )
+                recipe = parse_recipe(recipe_path)
+                task = recipe.tasks["build"]
+                self.assertIn(name, task._input_map)
+
+    def test_empty_inputs_list(self):
+        """Test that empty inputs list works correctly."""
+        with TemporaryDirectory() as tmpdir:
+            recipe_path = Path(tmpdir) / "tasktree.yaml"
+            recipe_path.write_text(
+                """
+tasks:
+  build:
+    inputs: []
+    cmd: build.sh
+"""
+            )
+
+            recipe = parse_recipe(recipe_path)
+            task = recipe.tasks["build"]
+            self.assertEqual(len(task.inputs), 0)
+            self.assertEqual(len(task._input_map), 0)
+            self.assertEqual(len(task._anonymous_inputs), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
