@@ -23,6 +23,8 @@ The project team requires that each commit contains a small number of changes. I
 
 Tickets and features should be iteratively broken down until they can be implemented as a series of small commits.
 
+When prompting the user to move to the next stage, estimate the size of the work and indicate whether you think there is sufficient usage to implement the next stage, or not. ("estimated required tokens: X, remaining usage in this session: Y tokens")
+
 #### Local Claude Code work 
 When working locally on a user's machine, Claude Code should NEVER make commits - only stop and ask the user to review and commit, before carrying on with the next incremental change.
 
@@ -33,6 +35,9 @@ When working as a GitHub agent, claude should still BREAK DOWN THE TASK into sma
 If you are checking that a feature you are implementing has been implemented correctly, DO NOT write a bespoke test script to check the output of the app with the new functionality. INSTEAD, write a unit/integration/end-to-end test that will confirm you have correctly implemented the feature and RUN JUST THAT TEST. If it passes, you have implemented things correctly; and you can either carry on with additional parts of the feature, or run all the tests to ensure no regressions.
 
 It is still permissible to write and run an ad hoc script to investigate/confirm the current behaviour. Although, it is better to first search for a test that does the thing that you're investigating. If one exists and is passing: then the app does the thing.
+
+### Testas we go!
+We do not plan to implement all the code (maybe even with unit tests) and then write a bunch of integration tests. We PLAN END-TO-END incremental changes. This will involve writing high-level test of the functionality as early as possible, to ensure that the new feature is progressing as expected.
 
 ### Try to be efficient with token usage
 Your sponsor is not made of money! Try to minimise token useage, so that we can maximise the effectiveness of Claude Code on a features per token basis. Obviously, if a thing needs doing and it takes a bunch of tokens, that's just the way it is. Just try to consider/avoid profligacy!
