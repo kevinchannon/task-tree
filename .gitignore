@@ -154,5 +154,9 @@ example/output.txt
 example/archive.tar.gz
 example/.tasktree-state
 
+# Requirements files copied from GitHub issues (for driving Claude Code)
+requirements/*
+
 # UV lock file (optional - some prefer to commit this)
 # uv.lock
+
